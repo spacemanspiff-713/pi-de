@@ -11,9 +11,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(PiViewProvider.viewType, provider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
+    vscode.workspace.registerTextDocumentContentProvider("pi-change", provider),
     vscode.commands.registerCommand("pi.openChat", () => provider.reveal()),
     vscode.commands.registerCommand("pi.newSession", () => provider.newSession()),
     vscode.commands.registerCommand("pi.openSession", () => provider.openSession()),
+    vscode.commands.registerCommand("pi.reviewChanges", () => provider.reviewChanges()),
     vscode.commands.registerCommand("pi.abort", () => provider.abort()),
     vscode.commands.registerCommand("pi.restart", () => provider.restart()),
     vscode.commands.registerCommand("pi.askSelection", async () => {

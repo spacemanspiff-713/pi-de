@@ -2,7 +2,7 @@
   "name": "pi-vscode",
   "displayName": "Pi Coding Agent",
   "description": "A dedicated VS Code interface for the Pi coding agent.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "pidaddylabs",
   "private": true,
   "license": "MIT",
@@ -64,6 +64,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "pi.reviewChanges",
+        "category": "Pi",
+        "title": "Review Changes",
+        "icon": "$(diff-multiple)"
+      },
+      {
         "command": "pi.abort",
         "category": "Pi",
         "title": "Stop Agent",
@@ -94,8 +100,13 @@
           "when": "view == pi.chatView"
         },
         {
-          "command": "pi.restart",
+          "command": "pi.reviewChanges",
           "group": "navigation@3",
+          "when": "view == pi.chatView"
+        },
+        {
+          "command": "pi.restart",
+          "group": "navigation@4",
           "when": "view == pi.chatView"
         }
       ],
@@ -132,6 +143,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show streamed reasoning in a collapsible section."
+        },
+        "pi.gitCheckpoints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create a non-destructive Git checkpoint of the current working tree before each new Pi task, enabling per-file diff and revert."
         }
       }
     }

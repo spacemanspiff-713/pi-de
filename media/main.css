@@ -20,7 +20,7 @@ html, body {
   font-size: var(--vscode-font-size);
 }
 
-body { display: grid; grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; }
+body { display: grid; grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto; }
 button, textarea { font: inherit; }
 button { color: inherit; }
 .hidden { display: none !important; }
@@ -78,6 +78,19 @@ button { color: inherit; }
   font-size: 11px;
 }
 .widget { white-space: pre-wrap; }
+
+.change-summary { padding: 7px var(--pad) 0; }
+.change-summary button {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--vscode-testing-iconPassed) 45%, var(--border));
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed) 8%, transparent);
+  color: var(--vscode-sideBar-foreground);
+  text-align: left;
+  cursor: pointer;
+}
+.change-summary button:hover { background: color-mix(in srgb, var(--vscode-testing-iconPassed) 14%, transparent); }
 
 #transcript {
   min-height: 0;
@@ -208,6 +221,53 @@ button { color: inherit; }
 
 .jump { position: absolute; right: 14px; bottom: 114px; }
 .jump button { border: 1px solid var(--border); border-radius: 999px; padding: 4px 9px; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); cursor: pointer; }
+
+.control-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+  background: var(--vscode-sideBar-background);
+}
+#changes-panel { grid-template-rows: auto auto minmax(0, 1fr); }
+.control-panel > header { display: flex; align-items: center; min-height: 43px; padding: 8px var(--pad); border-bottom: 1px solid var(--border); }
+.control-panel > header strong { flex: 1; }
+.control-panel > header button { border: 0; border-radius: 5px; min-width: 27px; min-height: 27px; background: transparent; color: inherit; cursor: pointer; }
+.control-panel > header button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.panel-summary { padding: 8px var(--pad); color: var(--vscode-descriptionForeground); font-size: 11px; border-bottom: 1px solid var(--border); }
+.panel-toolbar { display: flex; gap: 5px; padding: 7px var(--pad); border-bottom: 1px solid var(--border); }
+.panel-toolbar button, .row-actions button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 10px;
+}
+.panel-toolbar button:hover, .row-actions button:hover { background: var(--vscode-toolbar-hoverBackground); }
+.row-actions button.danger { color: var(--vscode-testing-iconFailed); }
+.panel-list { min-height: 0; overflow-y: auto; }
+.panel-list.compact { max-height: 30vh; border-top: 1px solid var(--border); }
+.panel-row { padding: 8px var(--pad); border-bottom: 1px solid var(--border); }
+.panel-row.accepted { opacity: .62; }
+.panel-row-main { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.panel-row-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--vscode-editor-font-family); font-size: 11px; }
+.panel-row-main span { color: var(--vscode-descriptionForeground); font-size: 10px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.panel-section-title { padding: 8px var(--pad) 5px; color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; }
+.prompt-row { display: flex; flex-direction: column; width: 100%; border: 0; border-bottom: 1px solid var(--border); padding: 7px var(--pad); background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.prompt-row:hover { background: var(--vscode-list-hoverBackground); }
+.prompt-row strong { font-family: var(--vscode-editor-font-family); font-size: 11px; }
+.prompt-row span, .panel-empty { color: var(--vscode-descriptionForeground); font-size: 10px; }
+.panel-empty { padding: 8px var(--pad); }
+.server-status { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--vscode-descriptionForeground); }
+.server-status.connected { background: var(--vscode-testing-iconPassed); }
+.server-status.failed, .server-status.needs-auth { background: var(--vscode-testing-iconFailed); }
+.server-status.cached { background: var(--vscode-charts-blue); }
+.server-status.disabled { opacity: .45; }
 
 .composer-shell {
   position: relative;

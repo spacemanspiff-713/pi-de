@@ -5,10 +5,13 @@ import { JSDOM } from "jsdom";
 
 const shell = `<!doctype html><html><body>
   <span id="status-dot"></span><button id="model"></button><button id="thinking"></button>
-  <div id="banner"></div><div id="widget"></div><main id="transcript"></main>
+  <div id="banner"></div><div id="widget"></div><div id="change-summary"></div><main id="transcript"></main>
   <div id="jump" class="hidden"><button>Jump</button></div>
+  <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
+  <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>
   <div id="context-chips"></div><textarea id="prompt"></textarea>
-  <button id="sessions"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
+  <button id="sessions"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
+  <button id="mcp-reconnect-all"></button><button id="mcp-config"></button>
   <button id="attach"></button><button id="stop"></button><button id="send"></button>
   <span id="queue"></span><div id="command-menu"></div><div id="context-menu"></div>
 </body></html>`;
@@ -55,6 +58,35 @@ describe("bundled Pi webview", () => {
 
     document.querySelector("a")?.click();
     expect(posted.some((message) => message.type === "openLink" && message.href === "https://example.com")).toBe(true);
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: {
+        type: "changeSet",
+        changeSet: {
+          id: "task-1",
+          checkpoint: "abcdef123456",
+          additions: 4,
+          deletions: 2,
+          files: [{ path: "src/app.ts", status: "M", additions: 4, deletions: 2 }],
+        },
+      },
+    }));
+    expect(document.querySelector("#change-summary")?.textContent).toContain("1 file");
+    expect(document.querySelector("#changes-list")?.textContent).toContain("src/app.ts");
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: {
+        type: "mcpStatus",
+        snapshot: {
+          connectedCount: 1,
+          totalTools: 5,
+          totalResources: 2,
+          servers: [{ name: "docs", status: "connected", toolCount: 5, resourceCount: 2, disabled: false }],
+        },
+      },
+    }));
+    expect(document.querySelector("#mcp-totals")?.textContent).toContain("1/1 connected");
+    expect(document.querySelector("#mcp-list")?.textContent).toContain("docs");
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     dom.window.close();

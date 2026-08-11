@@ -20976,11 +20976,23 @@
     const queue = document.getElementById("queue");
     const widget = document.getElementById("widget");
     const jump = document.getElementById("jump");
+    const changesButton = document.getElementById("changes");
+    const changeSummary = document.getElementById("change-summary");
+    const changesPanel = document.getElementById("changes-panel");
+    const changesTotals = document.getElementById("changes-totals");
+    const changesList = document.getElementById("changes-list");
+    const mcpPanel = document.getElementById("mcp-panel");
+    const mcpTotals = document.getElementById("mcp-totals");
+    const mcpList = document.getElementById("mcp-list");
+    const mcpPrompts = document.getElementById("mcp-prompts");
     let activeAssistant;
     let activeThinking;
     let commands = [];
     let latestContextRequest = "";
     let contextSearchTimer;
+    let latestChangeSet;
+    let latestMcpStatus;
+    let latestMcpPrompts = [];
     let renderFrame;
     const tools = /* @__PURE__ */ new Map();
     const messageSource = /* @__PURE__ */ new WeakMap();
@@ -20991,6 +21003,16 @@
     document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
     document.getElementById("restart").addEventListener("click", () => vscode.postMessage({ type: "restart" }));
     document.getElementById("output").addEventListener("click", () => vscode.postMessage({ type: "showOutput" }));
+    changesButton.addEventListener("click", () => {
+      if (latestChangeSet?.files?.length) showPanel(changesPanel);
+      else vscode.postMessage({ type: "reviewChanges" });
+    });
+    document.getElementById("mcp").addEventListener("click", () => showPanel(mcpPanel));
+    document.getElementById("mcp-reconnect-all").addEventListener("click", () => vscode.postMessage({ type: "mcpAction", action: "reconnect" }));
+    document.getElementById("mcp-config").addEventListener("click", () => vscode.postMessage({ type: "openMcpConfig" }));
+    document.querySelectorAll("[data-close-panel]").forEach((button) => button.addEventListener("click", () => {
+      document.getElementById(button.dataset.closePanel)?.classList.add("hidden");
+    }));
     modelButton.addEventListener("click", () => vscode.postMessage({ type: "pickModel" }));
     thinkingButton.addEventListener("click", () => vscode.postMessage({ type: "pickThinking" }));
     stopButton.addEventListener("click", () => vscode.postMessage({ type: "abort" }));
@@ -21122,6 +21144,28 @@
           prompt.value = String(data.text || "");
           updateContextChips();
           prompt.focus();
+          break;
+        case "changeSet":
+          latestChangeSet = data.changeSet;
+          renderChangeSet();
+          break;
+        case "showChanges":
+          latestChangeSet = data.changeSet;
+          renderChangeSet();
+          showPanel(changesPanel);
+          break;
+        case "hideChanges":
+          latestChangeSet = void 0;
+          renderChangeSet();
+          changesPanel.classList.add("hidden");
+          break;
+        case "mcpStatus":
+          latestMcpStatus = data.snapshot;
+          renderMcp();
+          break;
+        case "mcpPrompts":
+          latestMcpPrompts = data.prompts || [];
+          renderMcp();
           break;
         case "queue": {
           const count = (data.steering?.length || 0) + (data.followUp?.length || 0);
@@ -21320,6 +21364,113 @@
       element.textContent = String(message || "");
       transcript.append(element);
       scrollToBottom();
+    }
+    function showPanel(panel) {
+      document.querySelectorAll(".control-panel").forEach((candidate) => {
+        if (candidate !== panel) candidate.classList.add("hidden");
+      });
+      panel.classList.remove("hidden");
+    }
+    function renderChangeSet() {
+      const files = latestChangeSet?.files || [];
+      const pending = files.filter((file) => !file.accepted);
+      changesButton.classList.toggle("hidden", !files.length);
+      changeSummary.textContent = "";
+      changesList.textContent = "";
+      if (!files.length) {
+        changeSummary.classList.add("hidden");
+        changesTotals.textContent = "No file changes in the latest Pi task.";
+        return;
+      }
+      const summaryText = `${pending.length || files.length} file${(pending.length || files.length) === 1 ? "" : "s"}  +${latestChangeSet.additions} \u2212${latestChangeSet.deletions}`;
+      const summaryButton = document.createElement("button");
+      summaryButton.textContent = pending.length ? `${summaryText} \xB7 Review changes` : `${summaryText} \xB7 Reviewed`;
+      summaryButton.addEventListener("click", () => showPanel(changesPanel));
+      changeSummary.append(summaryButton);
+      changeSummary.classList.remove("hidden");
+      changesTotals.textContent = `${files.length} changed \xB7 +${latestChangeSet.additions} \u2212${latestChangeSet.deletions} \xB7 checkpoint ${String(latestChangeSet.checkpoint || "").slice(0, 10)}`;
+      for (const file of files) {
+        const row = document.createElement("div");
+        row.className = `panel-row change-row${file.accepted ? " accepted" : ""}`;
+        const main = document.createElement("div");
+        main.className = "panel-row-main";
+        const title = document.createElement("strong");
+        title.textContent = file.path;
+        const meta = document.createElement("span");
+        const stats = file.additions === null ? "binary" : `+${file.additions || 0} \u2212${file.deletions || 0}`;
+        meta.textContent = `${file.status} \xB7 ${stats}${file.accepted ? " \xB7 accepted" : ""}`;
+        main.append(title, meta);
+        const actions = document.createElement("div");
+        actions.className = "row-actions";
+        actions.append(panelAction("Diff", () => vscode.postMessage({ type: "openDiff", path: file.path })));
+        if (!file.accepted) {
+          actions.append(panelAction("Accept", () => vscode.postMessage({ type: "acceptChange", path: file.path })));
+          actions.append(panelAction("Revert", () => vscode.postMessage({ type: "revertChange", path: file.path }), "danger"));
+        }
+        row.append(main, actions);
+        changesList.append(row);
+      }
+    }
+    function renderMcp() {
+      const snapshot = latestMcpStatus || {};
+      const servers = Array.isArray(snapshot.servers) ? snapshot.servers : [];
+      mcpTotals.textContent = servers.length ? `${snapshot.connectedCount || 0}/${servers.length} connected \xB7 ${snapshot.totalTools || 0} tools \xB7 ${snapshot.totalResources || 0} resources` : "No MCP servers reported. Pi may still be initializing the adapter.";
+      mcpList.textContent = "";
+      for (const server of servers) {
+        const row = document.createElement("div");
+        row.className = "panel-row";
+        const main = document.createElement("div");
+        main.className = "panel-row-main";
+        const title = document.createElement("strong");
+        title.textContent = server.name;
+        const meta = document.createElement("span");
+        meta.innerHTML = `<i class="server-status ${safeClass(server.status)}"></i>${escapeText(server.status)} \xB7 ${Number(server.toolCount || 0)} tools${server.resourceCount === void 0 ? "" : ` \xB7 ${Number(server.resourceCount)} resources`}`;
+        main.append(title, meta);
+        const actions = document.createElement("div");
+        actions.className = "row-actions";
+        if (server.disabled) {
+          actions.append(panelAction("Enable", () => vscode.postMessage({ type: "mcpAction", action: "enable", server: server.name })));
+        } else {
+          actions.append(panelAction(server.status === "connected" ? "Reconnect" : "Connect", () => vscode.postMessage({ type: "mcpAction", action: "reconnect", server: server.name })));
+          if (server.status === "needs-auth") actions.append(panelAction("Authenticate", () => vscode.postMessage({ type: "mcpAction", action: "auth", server: server.name })));
+          actions.append(panelAction("Disable", () => vscode.postMessage({ type: "mcpAction", action: "disable", server: server.name }), "danger"));
+        }
+        row.append(main, actions);
+        mcpList.append(row);
+      }
+      mcpPrompts.textContent = "";
+      if (!latestMcpPrompts.length) {
+        const empty = document.createElement("div");
+        empty.className = "panel-empty";
+        empty.textContent = "No cached MCP prompts.";
+        mcpPrompts.append(empty);
+      } else {
+        for (const item of latestMcpPrompts) {
+          const button = document.createElement("button");
+          button.className = "prompt-row";
+          button.innerHTML = `<strong>/${escapeText(item.name)}</strong><span>${escapeText(item.description || "MCP prompt")}</span>`;
+          button.addEventListener("click", () => {
+            vscode.postMessage({ type: "mcpAction", action: "prompt", command: item.name });
+            mcpPanel.classList.add("hidden");
+          });
+          mcpPrompts.append(button);
+        }
+      }
+    }
+    function panelAction(label, handler, kind = "") {
+      const button = document.createElement("button");
+      button.textContent = label;
+      if (kind) button.classList.add(kind);
+      button.addEventListener("click", handler);
+      return button;
+    }
+    function safeClass(value) {
+      return String(value || "unknown").replace(/[^a-z0-9_-]/gi, "");
+    }
+    function escapeText(value) {
+      const element = document.createElement("span");
+      element.textContent = String(value || "");
+      return element.innerHTML;
     }
     function updateCommandMenu() {
       const before = prompt.value.slice(0, prompt.selectionStart);

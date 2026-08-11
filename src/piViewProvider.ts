@@ -1,9 +1,12 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { basename } from "node:path";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import * as vscode from "vscode";
+import { GitChangeReview, type ChangeSet } from "./changeReview";
 import { contextScore, extractMentions, mentionText, truncateContext } from "./contextMentions";
 import { PiRpcClient, type RpcRecord } from "./piRpcClient";
+import { archiveSession, discoverSessions, restoreArchivedSession, type SessionSummary } from "./sessionLibrary";
 
 interface PiState {
   model?: { id?: string; name?: string; provider?: string } | null;
@@ -48,11 +51,16 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private unsubscribeRecord?: () => void;
   private unsubscribeExit?: () => void;
   private fileContextCache?: { expiresAt: number; items: ContextCompletion[] };
+  private readonly changeReview: GitChangeReview;
+  private availableCommands: Array<{ name: string; description?: string; source?: string }> = [];
+  private mcpStatus?: Record<string, unknown>;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly output: vscode.OutputChannel,
-  ) {}
+  ) {
+    this.changeReview = new GitChangeReview((line) => this.output.appendLine(`[Git checkpoint] ${line}`));
+  }
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
@@ -96,41 +104,37 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   async openSession(): Promise<void> {
     await this.ensureStarted();
     const folder = this.workspaceFolder();
-    const client = this.client;
-    if (!folder || !client?.running) return;
-    const sessions = this.context.workspaceState.get<StoredSession[]>(this.sessionsStorageKey(folder.uri), []);
+    if (!folder || !this.client?.running) return;
+    const sessions = await discoverSessions({
+      cwd: folder.uri.fsPath,
+      currentSessionFile: this.state.sessionFile,
+      agentDir: process.env.PI_CODING_AGENT_DIR,
+    });
     if (!sessions.length) {
-      void vscode.window.showInformationMessage("No Pi sessions have been opened from this VS Code workspace yet.");
+      void vscode.window.showInformationMessage("No Pi CLI sessions were found for this workspace.");
       return;
     }
+    const selection = await this.pickSessionAction(sessions);
+    if (!selection) return;
+    await this.handleSessionAction(selection.session, selection.action);
+  }
 
-    const selected = await vscode.window.showQuickPick(
-      sessions
-        .filter((session) => existsSync(session.file))
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .map((session) => ({
-          label: session.name || `Pi session ${shortId(session.id)}`,
-          description: session.file === this.state.sessionFile ? "Current session" : relativeTime(session.updatedAt),
-          detail: session.file,
-          session,
-        })),
-      { title: "Open Pi Session", placeHolder: "Select a recent workspace chat" },
-    );
-    if (!selected || selected.session.file === this.state.sessionFile) return;
-    if (this.state.isStreaming) {
-      const stop = await vscode.window.showWarningMessage(
-        "Pi is still working. Stop it and switch sessions?",
-        { modal: true },
-        "Stop and Switch",
-      );
-      if (!stop) return;
-      await this.abort();
+  async reviewChanges(): Promise<void> {
+    await this.reveal();
+    const changeSet = this.changeReview.changeSet;
+    if (!changeSet?.files.length) {
+      void vscode.window.showInformationMessage("Pi has no unreviewed file changes from the latest task.");
+      return;
     }
+    this.post({ type: "showChanges", changeSet });
+  }
 
-    const response = await client.request({ type: "switch_session", sessionPath: selected.session.file });
-    if (asRecord(response.data).cancelled === true) return;
-    this.post({ type: "clear" });
-    await this.refresh();
+  async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    const params = new URLSearchParams(uri.query);
+    const path = params.get("path") ?? uri.path.replace(/^\//, "");
+    return params.get("side") === "before"
+      ? await this.changeReview.beforeContent(path)
+      : await this.changeReview.afterContent(path);
   }
 
   async abort(): Promise<void> {
@@ -205,16 +209,22 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     });
 
     this.post({ type: "connection", status: "starting", message: "Starting Pi…" });
+    const bridgePath = vscode.Uri.joinPath(this.context.extensionUri, "pi-bridge", "index.ts").fsPath;
     client.start({
       executable,
       cwd: folder.uri.fsPath,
-      args: extraArgs,
+      args: [...extraArgs, "--extension", bridgePath],
       sessionFile,
       approveWorkspace,
     });
 
     try {
       await this.refresh();
+      const savedChanges = this.context.workspaceState.get<ChangeSet>(this.changesStorageKey(folder.uri));
+      if (savedChanges) {
+        this.changeReview.restore(savedChanges);
+        this.post({ type: "changeSet", changeSet: savedChanges });
+      }
       this.post({ type: "connection", status: "ready", message: "Pi is ready." });
     } catch (error) {
       this.showError(error);
@@ -262,9 +272,12 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         source: typeof item.source === "string" ? item.source : undefined,
       };
     });
+    this.availableCommands = commands;
 
     this.post({ type: "history", messages });
     this.post({ type: "commands", commands });
+    this.post({ type: "mcpPrompts", prompts: commands.filter((command) => command.name.startsWith("mcp__")) });
+    if (this.mcpStatus) this.post({ type: "mcpStatus", snapshot: this.mcpStatus });
     this.postState();
   }
 
@@ -275,6 +288,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         await this.ensureStarted();
         if (this.client?.running) {
           await this.refresh().catch((error) => this.showError(error));
+          if (this.changeReview.changeSet?.files.length) this.post({ type: "changeSet", changeSet: this.changeReview.changeSet });
           this.post({ type: "connection", status: "ready", message: "Pi is ready." });
         }
         break;
@@ -313,6 +327,29 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       case "openLink":
         await this.openLink(String(message.href ?? ""));
         break;
+      case "reviewChanges":
+        await this.reviewChanges();
+        break;
+      case "openDiff":
+        await this.openChangeDiff(String(message.path ?? ""));
+        break;
+      case "acceptChange": {
+        const changeSet = this.changeReview.accept(String(message.path ?? ""));
+        if (changeSet) {
+          await this.persistChangeSet(changeSet);
+          this.post({ type: "changeSet", changeSet });
+        }
+        break;
+      }
+      case "revertChange":
+        await this.revertChange(String(message.path ?? ""));
+        break;
+      case "mcpAction":
+        await this.handleMcpAction(String(message.action ?? ""), String(message.server ?? ""), String(message.command ?? ""));
+        break;
+      case "openMcpConfig":
+        await this.openMcpConfig();
+        break;
       case "showOutput":
         this.output.show(true);
         break;
@@ -325,6 +362,20 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     await this.ensureStarted();
     const client = this.client;
     if (!client?.running) return;
+
+    if (
+      !this.state.isStreaming
+      && !prompt.startsWith("/")
+      && vscode.workspace.getConfiguration("pi").get<boolean>("gitCheckpoints", true)
+    ) {
+      const folder = this.workspaceFolder();
+      if (folder) {
+        await this.changeReview.begin(folder.uri.fsPath, prompt).catch((error) => {
+          this.output.appendLine(`[Git checkpoint] ${errorMessage(error)}`);
+          this.post({ type: "notice", message: `Git checkpoint unavailable: ${errorMessage(error)}` });
+        });
+      }
+    }
 
     const message = await this.withMentionedContexts(prompt);
     this.post({ type: "userPrompt", text: prompt });
@@ -390,17 +441,42 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     this.postState();
   }
 
+  private async refreshCommands(): Promise<void> {
+    const response = await this.client?.request({ type: "get_commands" });
+    if (!response) return;
+    this.availableCommands = asArray(asRecord(response.data).commands).map((command) => {
+      const item = asRecord(command);
+      return {
+        name: String(item.name ?? ""),
+        description: typeof item.description === "string" ? item.description : undefined,
+        source: typeof item.source === "string" ? item.source : undefined,
+      };
+    });
+    this.post({ type: "commands", commands: this.availableCommands });
+    this.post({ type: "mcpPrompts", prompts: this.availableCommands.filter((command) => command.name.startsWith("mcp__")) });
+  }
+
   private async handleRpcRecord(record: RpcRecord): Promise<void> {
     switch (record.type) {
       case "agent_start":
         this.state.isStreaming = true;
         this.post({ type: "busy", value: true });
         break;
-      case "agent_settled":
+      case "agent_settled": {
         this.state.isStreaming = false;
         this.post({ type: "busy", value: false });
+        const changeSet = await this.changeReview.finish().catch((error) => {
+          this.output.appendLine(`[Git checkpoint] Could not calculate changes: ${errorMessage(error)}`);
+          return undefined;
+        });
+        if (changeSet) {
+          await this.persistChangeSet(changeSet);
+          if (changeSet.files.length) this.post({ type: "changeSet", changeSet });
+          else this.post({ type: "hideChanges" });
+        }
         await this.refreshState().catch(() => undefined);
         break;
+      }
       case "message_update": {
         const event = asRecord(record.assistantMessageEvent);
         if (event.type === "text_delta" && typeof event.delta === "string") {
@@ -510,12 +586,261 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       return;
     }
     if (method === "setWidget") {
-      this.post({ type: "widget", key: request.widgetKey, lines: request.widgetLines });
+      const lines = asArray(request.widgetLines).map(String);
+      if (request.widgetKey === "pi-vscode:mcp-status" && lines[0]?.startsWith("__PI_VSCODE_MCP_STATUS__")) {
+        try {
+          this.mcpStatus = JSON.parse(lines[0].slice("__PI_VSCODE_MCP_STATUS__".length)) as Record<string, unknown>;
+          this.post({ type: "mcpStatus", snapshot: this.mcpStatus });
+          void this.refreshCommands().catch(() => undefined);
+        } catch {
+          // Ignore malformed bridge snapshots.
+        }
+        return;
+      }
+      this.post({ type: "widget", key: request.widgetKey, lines });
       return;
     }
     if (method === "set_editor_text") {
       this.post({ type: "prefill", text: request.text });
     }
+  }
+
+  private async openChangeDiff(path: string): Promise<void> {
+    const changeSet = this.changeReview.changeSet;
+    if (!changeSet || !changeSet.files.some((file) => file.path === path)) return;
+    const revision = `${changeSet.id}-${Date.now()}`;
+    const queryBefore = new URLSearchParams({ side: "before", path, revision }).toString();
+    const queryAfter = new URLSearchParams({ side: "after", path, revision }).toString();
+    const uriPath = `/${path.replace(/^\//, "")}`;
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      vscode.Uri.from({ scheme: "pi-change", path: uriPath, query: queryBefore }),
+      vscode.Uri.from({ scheme: "pi-change", path: uriPath, query: queryAfter }),
+      `${path} — Before Pi ↔ After Pi`,
+      { preview: true },
+    );
+  }
+
+  private async revertChange(path: string): Promise<void> {
+    const confirm = await vscode.window.showWarningMessage(
+      `Revert Pi's changes to ${path}?`,
+      { modal: true, detail: "The file will be restored to the checkpoint captured immediately before this Pi task." },
+      "Revert File",
+    );
+    if (confirm !== "Revert File") return;
+    const changeSet = await this.changeReview.revert(path);
+    if (changeSet) {
+      await this.persistChangeSet(changeSet);
+      this.post({ type: "changeSet", changeSet });
+      if (!changeSet.files.length) this.post({ type: "hideChanges" });
+    }
+  }
+
+  private async pickSessionAction(sessions: SessionSummary[]): Promise<{ session: SessionSummary; action: string } | undefined> {
+    interface SessionItem extends vscode.QuickPickItem { session: SessionSummary }
+    const buttons = {
+      rename: { iconPath: new vscode.ThemeIcon("edit"), tooltip: "Rename" },
+      fork: { iconPath: new vscode.ThemeIcon("git-branch"), tooltip: "Fork" },
+      clone: { iconPath: new vscode.ThemeIcon("copy"), tooltip: "Clone" },
+      archive: { iconPath: new vscode.ThemeIcon("archive"), tooltip: "Archive" },
+      restore: { iconPath: new vscode.ThemeIcon("unarchive"), tooltip: "Restore" },
+      delete: { iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete" },
+    } satisfies Record<string, vscode.QuickInputButton>;
+    const picker = vscode.window.createQuickPick<SessionItem>();
+    picker.title = "Pi Session Library";
+    picker.placeholder = "Search names, prompts, models, or session IDs";
+    picker.matchOnDescription = true;
+    picker.matchOnDetail = true;
+    const buildItems = (query = ""): SessionItem[] => {
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      return sessions
+        .filter((session) => {
+          if (!terms.length) return true;
+          const haystack = `${session.name ?? ""}\n${session.id}\n${session.model ?? ""}\n${session.searchText}`.toLowerCase();
+          return terms.every((term) => haystack.includes(term));
+        })
+        .map((session) => ({
+          label: session.name || firstLine(session.preview) || `Pi session ${shortId(session.id)}`,
+          description: [
+            session.file === this.state.sessionFile ? "$(circle-filled) Current" : session.archived ? "Archived" : relativeTime(session.updatedAt),
+            session.model,
+          ].filter(Boolean).join(" · "),
+          detail: `${session.preview.replace(/\n/g, " ")}  —  ${session.messageCount} messages · ${formatTokens(session.tokens)} tokens · $${session.cost.toFixed(4)}`,
+          buttons: [buttons.rename, buttons.fork, buttons.clone, session.archived ? buttons.restore : buttons.archive, buttons.delete],
+          alwaysShow: true,
+          session,
+        }));
+    };
+    picker.items = buildItems();
+    picker.onDidChangeValue((value) => { picker.items = buildItems(value); });
+
+    return await new Promise((resolvePromise) => {
+      let settled = false;
+      const finish = (value?: { session: SessionSummary; action: string }) => {
+        if (settled) return;
+        settled = true;
+        picker.hide();
+        picker.dispose();
+        resolvePromise(value);
+      };
+      picker.onDidAccept(() => {
+        const item = picker.selectedItems[0];
+        if (item) finish({ session: item.session, action: "resume" });
+      });
+      picker.onDidTriggerItemButton(({ item, button }) => {
+        finish({ session: item.session, action: button.tooltip?.toLowerCase() ?? "resume" });
+      });
+      picker.onDidHide(() => finish());
+      picker.show();
+    });
+  }
+
+  private async handleSessionAction(session: SessionSummary, action: string): Promise<void> {
+    if (action === "resume") {
+      await this.switchToSession(session.file);
+      return;
+    }
+    if (action === "rename") {
+      const name = await vscode.window.showInputBox({ title: "Rename Pi Session", value: session.name ?? "", prompt: "Leave blank to clear the custom name" });
+      if (name === undefined) return;
+      if (session.file === this.state.sessionFile) {
+        await this.client?.request({ type: "set_session_name", name });
+      } else {
+        await this.renameInactiveSession(session, name);
+      }
+      await this.refreshState();
+      void vscode.window.showInformationMessage("Pi session renamed.");
+      return;
+    }
+    if (action === "clone" || action === "fork") {
+      await this.switchToSession(session.file);
+      if (action === "clone") {
+        await this.client?.request({ type: "clone" });
+      } else {
+        const response = await this.client?.request({ type: "get_fork_messages" });
+        const messages = asArray(asRecord(response?.data).messages).map((raw) => asRecord(raw));
+        const selected = await vscode.window.showQuickPick(
+          messages.map((message) => ({ label: truncateContext(String(message.text ?? ""), 120), entryId: String(message.entryId ?? "") })),
+          { title: "Fork Pi Session", placeHolder: "Choose the user message to branch from" },
+        );
+        if (!selected) return;
+        await this.client?.request({ type: "fork", entryId: selected.entryId });
+      }
+      this.post({ type: "clear" });
+      await this.refresh();
+      return;
+    }
+    if (session.file === this.state.sessionFile) {
+      void vscode.window.showWarningMessage("Switch away from the active Pi session before archiving or deleting it.");
+      return;
+    }
+    if (action === "archive") {
+      await archiveSession(session.file);
+      void vscode.window.showInformationMessage("Pi session archived.");
+      return;
+    }
+    if (action === "restore") {
+      await restoreArchivedSession(session.file);
+      void vscode.window.showInformationMessage("Pi session restored.");
+      return;
+    }
+    if (action === "delete") {
+      const confirmed = await vscode.window.showWarningMessage(
+        `Delete “${session.name || firstLine(session.preview)}”?`,
+        { modal: true, detail: "VS Code will use the operating system trash when available." },
+        "Move to Trash",
+      );
+      if (confirmed === "Move to Trash") {
+        await vscode.workspace.fs.delete(vscode.Uri.file(session.file), { recursive: false, useTrash: true });
+      }
+    }
+  }
+
+  private async switchToSession(file: string): Promise<void> {
+    if (!this.client?.running || file === this.state.sessionFile) return;
+    if (this.state.isStreaming) {
+      const stop = await vscode.window.showWarningMessage("Stop the active Pi task and switch sessions?", { modal: true }, "Stop and Switch");
+      if (stop !== "Stop and Switch") return;
+      await this.abort();
+    }
+    const response = await this.client.request({ type: "switch_session", sessionPath: file });
+    if (asRecord(response.data).cancelled === true) return;
+    this.post({ type: "clear" });
+    await this.refresh();
+  }
+
+  private async renameInactiveSession(session: SessionSummary, name: string): Promise<void> {
+    const folder = this.workspaceFolder();
+    if (!folder) return;
+    const config = vscode.workspace.getConfiguration("pi", folder.uri);
+    const executable = config.get<string>("executablePath", "pi").trim() || "pi";
+    const helper = new PiRpcClient((line) => this.output.appendLine(`[Pi session helper] ${line}`));
+    helper.start({
+      executable,
+      cwd: session.cwd,
+      args: ["--no-extensions", "--no-skills", "--no-prompt-templates"],
+      sessionFile: session.file,
+      approveWorkspace: false,
+    });
+    try {
+      await helper.request({ type: "get_state" });
+      await helper.request({ type: "set_session_name", name });
+    } finally {
+      await helper.stop();
+    }
+  }
+
+  private async handleMcpAction(action: string, server: string, command: string): Promise<void> {
+    if (action === "prompt") {
+      this.post({ type: "prefill", text: `/${command} ` });
+      return;
+    }
+    if (action === "config") {
+      await this.openMcpConfig();
+      return;
+    }
+    const client = this.client;
+    if (!client?.running) return;
+    if (action === "reconnect") {
+      await client.request({ type: "prompt", message: `/mcp reconnect${server ? ` ${server}` : ""}` }, 90_000);
+      return;
+    }
+    if (action === "auth") {
+      await client.request({ type: "prompt", message: `/mcp-auth ${server}` }, 180_000);
+      return;
+    }
+    if (action === "logout") {
+      await client.request({ type: "prompt", message: `/mcp logout ${server}` }, 90_000);
+      return;
+    }
+    if (action === "enable" || action === "disable") {
+      await client.request({ type: "prompt", message: `/mcp ${action} ${server}` }, 90_000);
+      await this.restart();
+    }
+  }
+
+  private async openMcpConfig(): Promise<void> {
+    const folder = this.workspaceFolder();
+    if (!folder) return;
+    const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+    const candidates = [
+      join(folder.uri.fsPath, ".mcp.json"),
+      join(folder.uri.fsPath, ".pi", "mcp.json"),
+      join(agentDir, "mcp.json"),
+      join(homedir(), ".config", "mcp", "mcp.json"),
+      join(homedir(), ".agents", "mcp.json"),
+      join(homedir(), ".agents", "mcp", "mcp.json"),
+    ].filter((path) => existsSync(path));
+    if (!candidates.length) {
+      const create = await vscode.window.showInformationMessage("No MCP configuration file was found.", "Create .mcp.json");
+      if (create !== "Create .mcp.json") return;
+      const uri = vscode.Uri.joinPath(folder.uri, ".mcp.json");
+      await vscode.workspace.fs.writeFile(uri, Buffer.from('{\n  "mcpServers": {}\n}\n'));
+      candidates.push(uri.fsPath);
+    }
+    const selected = candidates.length === 1 ? candidates[0] : await vscode.window.showQuickPick(candidates, { title: "Open MCP Configuration" });
+    if (!selected) return;
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(selected)));
   }
 
   private async searchContexts(query: string, requestId: string): Promise<void> {
@@ -693,6 +1018,15 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     return `pi.sessions:${uri.toString()}`;
   }
 
+  private changesStorageKey(uri: vscode.Uri): string {
+    return `pi.latestChangeSet:${uri.toString()}`;
+  }
+
+  private async persistChangeSet(changeSet: ChangeSet): Promise<void> {
+    const folder = this.workspaceFolder();
+    if (folder) await this.context.workspaceState.update(this.changesStorageKey(folder.uri), changeSet);
+  }
+
   private async rememberSession(uri: vscode.Uri): Promise<void> {
     const file = this.state.sessionFile;
     if (!file) return;
@@ -725,7 +1059,9 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   <header class="topbar">
     <div class="brand"><span class="status-dot" id="status-dot"></span><strong>Pi</strong></div>
     <div class="actions">
-      <button id="sessions" title="Open session">◷</button>
+      <button id="sessions" title="Session library">◷</button>
+      <button id="changes" class="hidden" title="Review changes">Δ</button>
+      <button id="mcp" title="MCP control center">⌁</button>
       <button id="new" title="New session">＋</button>
       <button id="restart" title="Restart Pi">↻</button>
       <button id="output" title="Show output">⋯</button>
@@ -737,8 +1073,22 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   </section>
   <div id="banner" class="banner">Starting Pi…</div>
   <div id="widget" class="widget hidden"></div>
+  <div id="change-summary" class="change-summary hidden"></div>
   <main id="transcript" aria-live="polite"></main>
   <div id="jump" class="jump hidden"><button>Jump to latest</button></div>
+  <section id="changes-panel" class="control-panel hidden" aria-label="Pi changes">
+    <header><strong>Pi Changes</strong><button data-close-panel="changes-panel">×</button></header>
+    <div id="changes-totals" class="panel-summary"></div>
+    <div id="changes-list" class="panel-list"></div>
+  </section>
+  <section id="mcp-panel" class="control-panel hidden" aria-label="MCP control center">
+    <header><strong>MCP Control Center</strong><button data-close-panel="mcp-panel">×</button></header>
+    <div id="mcp-totals" class="panel-summary">Waiting for MCP status…</div>
+    <div class="panel-toolbar"><button id="mcp-reconnect-all">Reconnect all</button><button id="mcp-config">Config</button></div>
+    <div id="mcp-list" class="panel-list"></div>
+    <div class="panel-section-title">Prompts</div>
+    <div id="mcp-prompts" class="panel-list compact"></div>
+  </section>
   <footer class="composer-shell">
     <div id="context-chips" class="context-chips hidden"></div>
     <textarea id="prompt" rows="3" placeholder="Ask Pi…  (@ for context, / for commands)" aria-label="Message Pi"></textarea>
@@ -833,6 +1183,16 @@ function gitDiff(cwd: string): Promise<string> {
 
 function shortId(id: string | undefined): string {
   return id ? id.slice(0, 8) : "unknown";
+}
+
+function firstLine(text: string): string {
+  return text.split(/\r?\n/, 1)[0]?.trim() ?? "";
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
+  return String(tokens);
 }
 
 function relativeTime(timestamp: number): string {

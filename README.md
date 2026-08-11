@@ -15,7 +15,10 @@ This repository contains the first working vertical slice:
 - Cancellation and queued follow-ups
 - Model and reasoning-level pickers
 - Dynamic Pi slash-command completion
-- Persistent per-workspace sessions with recent-chat switching
+- Complete searchable Pi CLI session library with usage/cost metadata, rename, resume, fork, clone, archive, restore, and trash
+- Native per-task Git checkpoints that preserve pre-existing dirty work
+- Changed-file totals, VS Code diff views, per-file accept/revert, and review-all UI
+- Live MCP control center with server status/tool counts, connect/reconnect, enable/disable, OAuth, prompts, approvals, and config editing
 - Existing Pi extensions, skills, prompts, MCP servers, and credentials
 - VS Code Workspace Trust and Pi project-resource approval
 - Extension confirmation/input dialogs rendered with native VS Code UI
