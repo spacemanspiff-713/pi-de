@@ -20934,7 +20934,38 @@
   _defineProperty(MarkdownIt, "StateInline", StateInline);
   var MarkdownItCallable = callable(MarkdownIt);
 
-  // webview/main.js
+  // webview/runtimeHealth.ts
+  function renderRuntimeHealth(elements, health) {
+    const available = health.status === "ready";
+    elements.container.classList.toggle("hidden", available);
+    elements.title.textContent = titleFor(health.status);
+    elements.message.textContent = health.message;
+    elements.details.textContent = [
+      health.executable ? `Executable: ${health.executable}` : "",
+      health.version ? `Version: ${health.version}` : ""
+    ].filter(Boolean).join(" \xB7 ");
+    elements.trustButton.classList.toggle("hidden", health.status !== "untrusted");
+  }
+  function titleFor(status) {
+    switch (status) {
+      case "checking":
+        return "Checking Pi runtime";
+      case "missing":
+        return "Pi is not installed or could not be found";
+      case "incompatible":
+        return "Pi needs to be updated";
+      case "untrusted":
+        return "Workspace Trust is required";
+      case "no-workspace":
+        return "Open a workspace";
+      case "error":
+        return "Pi runtime check failed";
+      case "ready":
+        return "Pi runtime ready";
+    }
+  }
+
+  // webview/main.ts
   var markdown = new MarkdownItCallable({
     html: false,
     linkify: true,
@@ -20985,6 +21016,11 @@
     const mcpTotals = document.getElementById("mcp-totals");
     const mcpList = document.getElementById("mcp-list");
     const mcpPrompts = document.getElementById("mcp-prompts");
+    const runtimeHealth = document.getElementById("runtime-health");
+    const runtimeHealthTitle = document.getElementById("runtime-health-title");
+    const runtimeHealthMessage = document.getElementById("runtime-health-message");
+    const runtimeHealthDetails = document.getElementById("runtime-health-details");
+    const runtimeTrustButton = document.getElementById("runtime-trust");
     let activeAssistant;
     let activeThinking;
     let commands = [];
@@ -21010,8 +21046,11 @@
     document.getElementById("mcp").addEventListener("click", () => showPanel(mcpPanel));
     document.getElementById("mcp-reconnect-all").addEventListener("click", () => vscode.postMessage({ type: "mcpAction", action: "reconnect" }));
     document.getElementById("mcp-config").addEventListener("click", () => vscode.postMessage({ type: "openMcpConfig" }));
+    runtimeTrustButton.addEventListener("click", () => vscode.postMessage({ type: "manageTrust" }));
+    document.getElementById("runtime-settings").addEventListener("click", () => vscode.postMessage({ type: "openRuntimeSettings" }));
+    document.getElementById("runtime-retry").addEventListener("click", () => vscode.postMessage({ type: "retryRuntime" }));
     document.querySelectorAll("[data-close-panel]").forEach((button) => button.addEventListener("click", () => {
-      document.getElementById(button.dataset.closePanel)?.classList.add("hidden");
+      document.getElementById(button.dataset.closePanel ?? "")?.classList.add("hidden");
     }));
     modelButton.addEventListener("click", () => vscode.postMessage({ type: "pickModel" }));
     thinkingButton.addEventListener("click", () => vscode.postMessage({ type: "pickThinking" }));
@@ -21076,6 +21115,15 @@
       switch (data.type) {
         case "connection":
           setConnection(data.status, data.message);
+          break;
+        case "runtimeHealth":
+          renderRuntimeHealth({
+            container: runtimeHealth,
+            title: runtimeHealthTitle,
+            message: runtimeHealthMessage,
+            details: runtimeHealthDetails,
+            trustButton: runtimeTrustButton
+          }, data.health);
           break;
         case "history":
           renderHistory(data.messages || []);
@@ -21168,7 +21216,7 @@
           renderMcp();
           break;
         case "queue": {
-          const count = (data.steering?.length || 0) + (data.followUp?.length || 0);
+          const count = arrayLength(data.steering) + arrayLength(data.followUp);
           queue.textContent = count ? `${count} queued` : "";
           break;
         }
@@ -21248,7 +21296,7 @@
     function removeEmptyState() {
       document.getElementById("empty-state")?.remove();
     }
-    function appendMessage(role, text3, thinking) {
+    function appendMessage(role, text3, thinking = "") {
       removeEmptyState();
       const article = document.createElement("article");
       article.className = `message ${role}`;
@@ -21412,8 +21460,8 @@
       }
     }
     function renderMcp() {
-      const snapshot = latestMcpStatus || {};
-      const servers = Array.isArray(snapshot.servers) ? snapshot.servers : [];
+      const snapshot = latestMcpStatus ?? { servers: [] };
+      const servers = snapshot.servers;
       mcpTotals.textContent = servers.length ? `${snapshot.connectedCount || 0}/${servers.length} connected \xB7 ${snapshot.totalTools || 0} tools \xB7 ${snapshot.totalResources || 0} resources` : "No MCP servers reported. Pi may still be initializing the adapter.";
       mcpList.textContent = "";
       for (const server of servers) {
@@ -21582,6 +21630,9 @@
       detail.textContent = description;
       button.append(name, detail);
       return button;
+    }
+    function arrayLength(value) {
+      return Array.isArray(value) ? value.length : 0;
     }
     function pretty(value) {
       try {

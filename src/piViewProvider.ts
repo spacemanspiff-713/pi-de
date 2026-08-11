@@ -1,36 +1,20 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename } from "node:path";
 import * as vscode from "vscode";
-import { GitChangeReview, type ChangeSet } from "./changeReview";
+import { ChangeReviewController } from "./controllers/changeReviewController";
+import { ExtensionUiBridge } from "./controllers/extensionUiBridge";
+import { McpController } from "./controllers/mcpController";
+import { SessionController } from "./controllers/sessionController";
 import { contextScore, extractMentions, mentionText, truncateContext } from "./contextMentions";
-import { PiRpcClient, type RpcRecord } from "./piRpcClient";
-import { archiveSession, discoverSessions, restoreArchivedSession, type SessionSummary } from "./sessionLibrary";
-
-interface PiState {
-  model?: { id?: string; name?: string; provider?: string } | null;
-  thinkingLevel?: string;
-  isStreaming?: boolean;
-  sessionFile?: string;
-  sessionId?: string;
-  sessionName?: string;
-}
-
-interface NormalizedMessage {
-  role: string;
-  text: string;
-  thinking?: string;
-  toolName?: string;
-  isError?: boolean;
-}
-
-interface StoredSession {
-  file: string;
-  id?: string;
-  name?: string;
-  updatedAt: number;
-}
+import type { RpcRecord } from "./piRpcClient";
+import {
+  parseWebviewMessage,
+  type HostToWebviewMessage,
+  type NormalizedMessage,
+  type PiCommandInfo,
+  type PiState,
+} from "./protocol";
+import { PiRuntime, type PiRuntimeEvent } from "./runtime/piRuntime";
 
 interface ContextCompletion {
   label: string;
@@ -44,22 +28,46 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   static readonly viewType = "pi.chatView";
 
   private view?: vscode.WebviewView;
-  private client?: PiRpcClient;
   private startPromise?: Promise<void>;
   private state: PiState = {};
   private disposed = false;
-  private unsubscribeRecord?: () => void;
-  private unsubscribeExit?: () => void;
   private fileContextCache?: { expiresAt: number; items: ContextCompletion[] };
-  private readonly changeReview: GitChangeReview;
-  private availableCommands: Array<{ name: string; description?: string; source?: string }> = [];
-  private mcpStatus?: Record<string, unknown>;
+  private availableCommands: PiCommandInfo[] = [];
+  private readonly runtime: PiRuntime;
+  private readonly changeReview: ChangeReviewController;
+  private readonly sessions: SessionController;
+  private readonly mcp: McpController;
+  private readonly extensionUi: ExtensionUiBridge;
+  private readonly unsubscribeRuntime: () => void;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly output: vscode.OutputChannel,
   ) {
-    this.changeReview = new GitChangeReview((line) => this.output.appendLine(`[Git checkpoint] ${line}`));
+    const folder = () => this.workspaceFolder();
+    const post = (message: Record<string, unknown>) => this.post(message as HostToWebviewMessage);
+    this.runtime = new PiRuntime((line) => this.output.appendLine(`[${new Date().toISOString()}] ${line}`));
+    this.changeReview = new ChangeReviewController(context, output, folder);
+    this.sessions = new SessionController({
+      context,
+      output,
+      workspaceFolder: folder,
+      client: () => this.runtime.client,
+      state: () => this.state,
+      abort: () => this.abort(),
+      refresh: () => this.refresh(),
+      refreshState: () => this.refreshState(),
+      post,
+    });
+    this.mcp = new McpController(
+      folder,
+      () => this.runtime.client,
+      () => this.restart(),
+      post,
+      () => this.refreshCommands(),
+    );
+    this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp);
+    this.unsubscribeRuntime = this.runtime.onEvent((event) => void this.handleRuntimeEvent(event));
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -84,39 +92,12 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
 
   async newSession(): Promise<void> {
     await this.ensureStarted();
-    if (!this.client) return;
-    if (this.state.isStreaming) {
-      const choice = await vscode.window.showWarningMessage(
-        "Pi is still working. Stop it and start a new session?",
-        { modal: true },
-        "Stop and Start New",
-      );
-      if (!choice) return;
-      await this.abort();
-    }
-    const response = await this.client.request({ type: "new_session" });
-    const data = asRecord(response.data);
-    if (data.cancelled === true) return;
-    this.post({ type: "clear" });
-    await this.refresh();
+    await this.sessions.newSession();
   }
 
   async openSession(): Promise<void> {
     await this.ensureStarted();
-    const folder = this.workspaceFolder();
-    if (!folder || !this.client?.running) return;
-    const sessions = await discoverSessions({
-      cwd: folder.uri.fsPath,
-      currentSessionFile: this.state.sessionFile,
-      agentDir: process.env.PI_CODING_AGENT_DIR,
-    });
-    if (!sessions.length) {
-      void vscode.window.showInformationMessage("No Pi CLI sessions were found for this workspace.");
-      return;
-    }
-    const selection = await this.pickSessionAction(sessions);
-    if (!selection) return;
-    await this.handleSessionAction(selection.session, selection.action);
+    await this.sessions.openLibrary();
   }
 
   async reviewChanges(): Promise<void> {
@@ -130,16 +111,12 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
-    const params = new URLSearchParams(uri.query);
-    const path = params.get("path") ?? uri.path.replace(/^\//, "");
-    return params.get("side") === "before"
-      ? await this.changeReview.beforeContent(path)
-      : await this.changeReview.afterContent(path);
+    return await this.changeReview.provideTextDocumentContent(uri);
   }
 
   async abort(): Promise<void> {
-    if (!this.client?.running) return;
-    await this.client.request({ type: "abort" }).catch((error) => this.showError(error));
+    if (!this.runtime.client?.running) return;
+    await this.runtime.client.request({ type: "abort" }).catch((error) => this.showError(error));
   }
 
   async restart(): Promise<void> {
@@ -159,13 +136,13 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
 
   async dispose(): Promise<void> {
     this.disposed = true;
+    this.unsubscribeRuntime();
     await this.stopClient();
   }
 
   private async ensureStarted(): Promise<void> {
-    if (this.client?.running) return;
+    if (this.runtime.running) return;
     if (this.startPromise) return await this.startPromise;
-
     this.startPromise = this.startClient().finally(() => {
       this.startPromise = undefined;
     });
@@ -175,79 +152,77 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private async startClient(): Promise<void> {
     if (this.disposed) return;
     if (!vscode.workspace.isTrusted) {
-      this.post({
-        type: "connection",
+      this.runtime.publishHealth({
         status: "untrusted",
-        message: "Trust this workspace to start Pi.",
+        message: "Trust this workspace before Pi can start or load project-local resources.",
       });
+      this.post({ type: "connection", status: "untrusted", message: "Trust this workspace to start Pi." });
       return;
     }
 
     const folder = this.workspaceFolder();
     if (!folder) {
+      this.runtime.publishHealth({ status: "no-workspace", message: "Open a folder or workspace to use Pi." });
       this.post({ type: "connection", status: "error", message: "Open a folder or workspace to use Pi." });
       return;
     }
 
     const config = vscode.workspace.getConfiguration("pi", folder.uri);
-    const executable = config.get<string>("executablePath", "pi").trim() || "pi";
+    const configuredExecutable = config.get<string>("executablePath", "pi").trim() || "pi";
     const extraArgs = config.get<string[]>("extraArgs", []);
     const approveWorkspace = config.get<boolean>("approveTrustedWorkspace", true);
-    const sessionKey = this.sessionStorageKey(folder.uri);
-    const savedSession = this.context.workspaceState.get<string>(sessionKey);
-    const sessionFile = savedSession && existsSync(savedSession) ? savedSession : undefined;
-
-    const client = new PiRpcClient((line) => this.output.appendLine(`[${new Date().toISOString()}] ${line}`));
-    this.client = client;
-    this.unsubscribeRecord = client.onRecord((record) => void this.handleRpcRecord(record));
-    this.unsubscribeExit = client.onExit(({ expected }) => {
-      this.post({
-        type: "connection",
-        status: expected ? "stopped" : "error",
-        message: expected ? "Pi stopped." : "Pi exited unexpectedly. Use Restart Agent to reconnect.",
-      });
-    });
-
-    this.post({ type: "connection", status: "starting", message: "Starting Pi…" });
+    const sessionFile = await this.sessions.restoreSessionFile();
     const bridgePath = vscode.Uri.joinPath(this.context.extensionUri, "pi-bridge", "index.ts").fsPath;
-    client.start({
-      executable,
+
+    this.post({ type: "connection", status: "starting", message: "Checking and starting Pi…" });
+    const started = await this.runtime.start({
+      configuredExecutable,
       cwd: folder.uri.fsPath,
       args: [...extraArgs, "--extension", bridgePath],
       sessionFile,
       approveWorkspace,
     });
+    if (!started) return;
 
     try {
       await this.refresh();
-      const savedChanges = this.context.workspaceState.get<ChangeSet>(this.changesStorageKey(folder.uri));
-      if (savedChanges) {
-        this.changeReview.restore(savedChanges);
-        this.post({ type: "changeSet", changeSet: savedChanges });
-      }
+      const savedChanges = await this.changeReview.restore();
+      if (savedChanges?.files.length) this.post({ type: "changeSet", changeSet: savedChanges });
       this.post({ type: "connection", status: "ready", message: "Pi is ready." });
     } catch (error) {
       this.showError(error);
-      this.post({
-        type: "connection",
-        status: "error",
-        message: `Could not start Pi: ${errorMessage(error)}`,
-      });
+      this.post({ type: "connection", status: "error", message: `Could not start Pi: ${errorMessage(error)}` });
     }
   }
 
   private async stopClient(): Promise<void> {
-    this.unsubscribeRecord?.();
-    this.unsubscribeRecord = undefined;
-    this.unsubscribeExit?.();
-    this.unsubscribeExit = undefined;
-    const client = this.client;
-    this.client = undefined;
-    if (client) await client.stop();
+    await this.runtime.stop();
+  }
+
+  private async handleRuntimeEvent(event: PiRuntimeEvent): Promise<void> {
+    if (event.type === "record") {
+      await this.handleRpcRecord(event.record);
+      return;
+    }
+    if (event.type === "health") {
+      this.post({ type: "runtimeHealth", health: event.health });
+      if (["missing", "incompatible", "error"].includes(event.health.status)) {
+        this.post({ type: "connection", status: "error", message: event.health.message });
+      }
+      return;
+    }
+    const message = event.expected ? "Pi stopped." : "Pi exited unexpectedly. Use Restart Agent to reconnect.";
+    this.post({ type: "connection", status: event.expected ? "stopped" : "error", message });
+    if (!event.expected) {
+      this.post({
+        type: "runtimeHealth",
+        health: { ...this.runtime.health, status: "error", message },
+      });
+    }
   }
 
   private async refresh(): Promise<void> {
-    const client = this.client;
+    const client = this.runtime.client;
     if (!client?.running) throw new Error("Pi is not running");
     const [stateResponse, messagesResponse, commandsResponse] = await Promise.all([
       client.request({ type: "get_state" }),
@@ -256,14 +231,11 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     ]);
 
     this.state = asRecord(stateResponse.data) as PiState;
-    const sessionFile = this.state.sessionFile;
-    const folder = this.workspaceFolder();
-    if (sessionFile && folder) {
-      await this.context.workspaceState.update(this.sessionStorageKey(folder.uri), sessionFile);
-      await this.rememberSession(folder.uri);
-    }
+    await this.sessions.rememberCurrent();
 
-    const messages = asArray(asRecord(messagesResponse.data).messages).map(normalizeMessage).filter(Boolean);
+    const messages = asArray(asRecord(messagesResponse.data).messages)
+      .map(normalizeMessage)
+      .filter((message): message is NormalizedMessage => message !== undefined);
     const commands = asArray(asRecord(commandsResponse.data).commands).map((command) => {
       const item = asRecord(command);
       return {
@@ -276,24 +248,28 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
 
     this.post({ type: "history", messages });
     this.post({ type: "commands", commands });
-    this.post({ type: "mcpPrompts", prompts: commands.filter((command) => command.name.startsWith("mcp__")) });
-    if (this.mcpStatus) this.post({ type: "mcpStatus", snapshot: this.mcpStatus });
+    this.mcp.postPrompts(commands);
+    this.mcp.postStatus();
     this.postState();
   }
 
   private async handleWebviewMessage(raw: unknown): Promise<void> {
-    const message = asRecord(raw);
+    const message = parseWebviewMessage(raw);
+    if (!message) {
+      this.output.appendLine("Ignored an invalid webview message.");
+      return;
+    }
     switch (message.type) {
       case "ready":
         await this.ensureStarted();
-        if (this.client?.running) {
+        if (this.runtime.running) {
           await this.refresh().catch((error) => this.showError(error));
           if (this.changeReview.changeSet?.files.length) this.post({ type: "changeSet", changeSet: this.changeReview.changeSet });
           this.post({ type: "connection", status: "ready", message: "Pi is ready." });
         }
         break;
       case "prompt":
-        await this.sendPrompt(String(message.text ?? ""));
+        await this.sendPrompt(message.text);
         break;
       case "abort":
         await this.abort();
@@ -314,44 +290,50 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         await this.pickThinking();
         break;
       case "contextSearch":
-        await this.searchContexts(String(message.query ?? ""), String(message.requestId ?? ""));
+        await this.searchContexts(message.query, message.requestId);
         break;
       case "copyText":
-        await vscode.env.clipboard.writeText(String(message.text ?? ""));
+        await vscode.env.clipboard.writeText(message.text);
         break;
       case "insertText": {
         const editor = vscode.window.activeTextEditor;
-        if (editor) await editor.edit((edit) => edit.insert(editor.selection.active, String(message.text ?? "")));
+        if (editor) await editor.edit((edit) => edit.insert(editor.selection.active, message.text));
         break;
       }
       case "openLink":
-        await this.openLink(String(message.href ?? ""));
+        await this.openLink(message.href);
         break;
       case "reviewChanges":
         await this.reviewChanges();
         break;
       case "openDiff":
-        await this.openChangeDiff(String(message.path ?? ""));
+        await this.changeReview.openDiff(message.path);
         break;
       case "acceptChange": {
-        const changeSet = this.changeReview.accept(String(message.path ?? ""));
-        if (changeSet) {
-          await this.persistChangeSet(changeSet);
-          this.post({ type: "changeSet", changeSet });
-        }
+        const changeSet = await this.changeReview.accept(message.path);
+        if (changeSet) this.post({ type: "changeSet", changeSet });
         break;
       }
       case "revertChange":
-        await this.revertChange(String(message.path ?? ""));
+        await this.revertChange(message.path);
         break;
       case "mcpAction":
-        await this.handleMcpAction(String(message.action ?? ""), String(message.server ?? ""), String(message.command ?? ""));
+        await this.mcp.action(message.action, message.server ?? "", message.command ?? "");
         break;
       case "openMcpConfig":
-        await this.openMcpConfig();
+        await this.mcp.openConfig();
         break;
       case "showOutput":
         this.output.show(true);
+        break;
+      case "manageTrust":
+        await vscode.commands.executeCommand("workbench.trust.manage");
+        break;
+      case "openRuntimeSettings":
+        await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pidaddylabs.pi-vscode");
+        break;
+      case "retryRuntime":
+        await this.restart();
         break;
     }
   }
@@ -360,7 +342,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     const prompt = text.trim();
     if (!prompt) return;
     await this.ensureStarted();
-    const client = this.client;
+    const client = this.runtime.client;
     if (!client?.running) return;
 
     if (
@@ -370,7 +352,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     ) {
       const folder = this.workspaceFolder();
       if (folder) {
-        await this.changeReview.begin(folder.uri.fsPath, prompt).catch((error) => {
+        await this.changeReview.begin(prompt).catch((error) => {
           this.output.appendLine(`[Git checkpoint] ${errorMessage(error)}`);
           this.post({ type: "notice", message: `Git checkpoint unavailable: ${errorMessage(error)}` });
         });
@@ -393,7 +375,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
 
   private async pickModel(): Promise<void> {
     await this.ensureStarted();
-    const client = this.client;
+    const client = this.runtime.client;
     if (!client?.running) return;
     const response = await client.request({ type: "get_available_models" }, 60_000);
     const models = asArray(asRecord(response.data).models).map((raw) => asRecord(raw));
@@ -419,7 +401,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
 
   private async pickThinking(): Promise<void> {
     await this.ensureStarted();
-    const client = this.client;
+    const client = this.runtime.client;
     if (!client?.running) return;
     const response = await client.request({ type: "get_available_thinking_levels" });
     const levels = asArray(asRecord(response.data).levels).map(String);
@@ -433,16 +415,15 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   private async refreshState(): Promise<void> {
-    const response = await this.client?.request({ type: "get_state" });
+    const response = await this.runtime.client?.request({ type: "get_state" });
     if (!response) return;
     this.state = asRecord(response.data) as PiState;
-    const folder = this.workspaceFolder();
-    if (folder && this.state.sessionFile) await this.rememberSession(folder.uri);
+    if (this.state.sessionFile) await this.sessions.rememberCurrent();
     this.postState();
   }
 
   private async refreshCommands(): Promise<void> {
-    const response = await this.client?.request({ type: "get_commands" });
+    const response = await this.runtime.client?.request({ type: "get_commands" });
     if (!response) return;
     this.availableCommands = asArray(asRecord(response.data).commands).map((command) => {
       const item = asRecord(command);
@@ -453,7 +434,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       };
     });
     this.post({ type: "commands", commands: this.availableCommands });
-    this.post({ type: "mcpPrompts", prompts: this.availableCommands.filter((command) => command.name.startsWith("mcp__")) });
+    this.mcp.postPrompts(this.availableCommands);
   }
 
   private async handleRpcRecord(record: RpcRecord): Promise<void> {
@@ -469,11 +450,8 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
           this.output.appendLine(`[Git checkpoint] Could not calculate changes: ${errorMessage(error)}`);
           return undefined;
         });
-        if (changeSet) {
-          await this.persistChangeSet(changeSet);
-          if (changeSet.files.length) this.post({ type: "changeSet", changeSet });
-          else this.post({ type: "hideChanges" });
-        }
+        if (changeSet?.files.length) this.post({ type: "changeSet", changeSet });
+        else if (changeSet) this.post({ type: "hideChanges" });
         await this.refreshState().catch(() => undefined);
         break;
       }
@@ -529,96 +507,12 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         this.post({ type: "error", message: String(record.error ?? "A Pi extension failed") });
         break;
       case "extension_ui_request":
-        await this.handleExtensionUi(record);
+        await this.extensionUi.handle(record);
         break;
       case "client_error":
         this.post({ type: "error", message: String(record.error ?? "Pi RPC error") });
         break;
     }
-  }
-
-  private async handleExtensionUi(request: RpcRecord): Promise<void> {
-    const client = this.client;
-    const id = request.id;
-    if (!client || typeof id !== "string") return;
-    const method = String(request.method ?? "");
-
-    if (method === "confirm") {
-      const allow = await vscode.window.showWarningMessage(
-        [request.title, request.message].filter(Boolean).map(String).join("\n\n"),
-        { modal: true },
-        "Allow",
-      );
-      client.send({ type: "extension_ui_response", id, confirmed: allow === "Allow" });
-      return;
-    }
-    if (method === "select") {
-      const value = await vscode.window.showQuickPick(asArray(request.options).map(String), {
-        title: String(request.title ?? "Pi needs input"),
-      });
-      client.send(value === undefined
-        ? { type: "extension_ui_response", id, cancelled: true }
-        : { type: "extension_ui_response", id, value });
-      return;
-    }
-    if (method === "input" || method === "editor") {
-      const value = await vscode.window.showInputBox({
-        title: String(request.title ?? "Pi needs input"),
-        prompt: typeof request.message === "string" ? request.message : undefined,
-        placeHolder: typeof request.placeholder === "string" ? request.placeholder : undefined,
-        value: typeof request.prefill === "string" ? request.prefill : undefined,
-        ignoreFocusOut: true,
-      });
-      client.send(value === undefined
-        ? { type: "extension_ui_response", id, cancelled: true }
-        : { type: "extension_ui_response", id, value });
-      return;
-    }
-    if (method === "notify") {
-      const text = String(request.message ?? "");
-      if (request.notifyType === "error") void vscode.window.showErrorMessage(text);
-      else if (request.notifyType === "warning") void vscode.window.showWarningMessage(text);
-      else void vscode.window.showInformationMessage(text);
-      return;
-    }
-    if (method === "setStatus") {
-      this.post({ type: "extensionStatus", key: request.statusKey, text: request.statusText });
-      return;
-    }
-    if (method === "setWidget") {
-      const lines = asArray(request.widgetLines).map(String);
-      if (request.widgetKey === "pi-vscode:mcp-status" && lines[0]?.startsWith("__PI_VSCODE_MCP_STATUS__")) {
-        try {
-          this.mcpStatus = JSON.parse(lines[0].slice("__PI_VSCODE_MCP_STATUS__".length)) as Record<string, unknown>;
-          this.post({ type: "mcpStatus", snapshot: this.mcpStatus });
-          void this.refreshCommands().catch(() => undefined);
-        } catch {
-          // Ignore malformed bridge snapshots.
-        }
-        return;
-      }
-      this.post({ type: "widget", key: request.widgetKey, lines });
-      return;
-    }
-    if (method === "set_editor_text") {
-      this.post({ type: "prefill", text: request.text });
-    }
-  }
-
-  private async openChangeDiff(path: string): Promise<void> {
-    const changeSet = this.changeReview.changeSet;
-    if (!changeSet || !changeSet.files.some((file) => file.path === path)) return;
-    const revision = `${changeSet.id}-${Date.now()}`;
-    const queryBefore = new URLSearchParams({ side: "before", path, revision }).toString();
-    const queryAfter = new URLSearchParams({ side: "after", path, revision }).toString();
-    const uriPath = `/${path.replace(/^\//, "")}`;
-    await vscode.commands.executeCommand(
-      "vscode.diff",
-      vscode.Uri.from({ scheme: "pi-change", path: uriPath, query: queryBefore }),
-      vscode.Uri.from({ scheme: "pi-change", path: uriPath, query: queryAfter }),
-      `${path} — Before Pi ↔ After Pi`,
-      { preview: true },
-    );
   }
 
   private async revertChange(path: string): Promise<void> {
@@ -630,217 +524,9 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     if (confirm !== "Revert File") return;
     const changeSet = await this.changeReview.revert(path);
     if (changeSet) {
-      await this.persistChangeSet(changeSet);
       this.post({ type: "changeSet", changeSet });
       if (!changeSet.files.length) this.post({ type: "hideChanges" });
     }
-  }
-
-  private async pickSessionAction(sessions: SessionSummary[]): Promise<{ session: SessionSummary; action: string } | undefined> {
-    interface SessionItem extends vscode.QuickPickItem { session: SessionSummary }
-    const buttons = {
-      rename: { iconPath: new vscode.ThemeIcon("edit"), tooltip: "Rename" },
-      fork: { iconPath: new vscode.ThemeIcon("git-branch"), tooltip: "Fork" },
-      clone: { iconPath: new vscode.ThemeIcon("copy"), tooltip: "Clone" },
-      archive: { iconPath: new vscode.ThemeIcon("archive"), tooltip: "Archive" },
-      restore: { iconPath: new vscode.ThemeIcon("unarchive"), tooltip: "Restore" },
-      delete: { iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete" },
-    } satisfies Record<string, vscode.QuickInputButton>;
-    const picker = vscode.window.createQuickPick<SessionItem>();
-    picker.title = "Pi Session Library";
-    picker.placeholder = "Search names, prompts, models, or session IDs";
-    picker.matchOnDescription = true;
-    picker.matchOnDetail = true;
-    const buildItems = (query = ""): SessionItem[] => {
-      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-      return sessions
-        .filter((session) => {
-          if (!terms.length) return true;
-          const haystack = `${session.name ?? ""}\n${session.id}\n${session.model ?? ""}\n${session.searchText}`.toLowerCase();
-          return terms.every((term) => haystack.includes(term));
-        })
-        .map((session) => ({
-          label: session.name || firstLine(session.preview) || `Pi session ${shortId(session.id)}`,
-          description: [
-            session.file === this.state.sessionFile ? "$(circle-filled) Current" : session.archived ? "Archived" : relativeTime(session.updatedAt),
-            session.model,
-          ].filter(Boolean).join(" · "),
-          detail: `${session.preview.replace(/\n/g, " ")}  —  ${session.messageCount} messages · ${formatTokens(session.tokens)} tokens · $${session.cost.toFixed(4)}`,
-          buttons: [buttons.rename, buttons.fork, buttons.clone, session.archived ? buttons.restore : buttons.archive, buttons.delete],
-          alwaysShow: true,
-          session,
-        }));
-    };
-    picker.items = buildItems();
-    picker.onDidChangeValue((value) => { picker.items = buildItems(value); });
-
-    return await new Promise((resolvePromise) => {
-      let settled = false;
-      const finish = (value?: { session: SessionSummary; action: string }) => {
-        if (settled) return;
-        settled = true;
-        picker.hide();
-        picker.dispose();
-        resolvePromise(value);
-      };
-      picker.onDidAccept(() => {
-        const item = picker.selectedItems[0];
-        if (item) finish({ session: item.session, action: "resume" });
-      });
-      picker.onDidTriggerItemButton(({ item, button }) => {
-        finish({ session: item.session, action: button.tooltip?.toLowerCase() ?? "resume" });
-      });
-      picker.onDidHide(() => finish());
-      picker.show();
-    });
-  }
-
-  private async handleSessionAction(session: SessionSummary, action: string): Promise<void> {
-    if (action === "resume") {
-      await this.switchToSession(session.file);
-      return;
-    }
-    if (action === "rename") {
-      const name = await vscode.window.showInputBox({ title: "Rename Pi Session", value: session.name ?? "", prompt: "Leave blank to clear the custom name" });
-      if (name === undefined) return;
-      if (session.file === this.state.sessionFile) {
-        await this.client?.request({ type: "set_session_name", name });
-      } else {
-        await this.renameInactiveSession(session, name);
-      }
-      await this.refreshState();
-      void vscode.window.showInformationMessage("Pi session renamed.");
-      return;
-    }
-    if (action === "clone" || action === "fork") {
-      await this.switchToSession(session.file);
-      if (action === "clone") {
-        await this.client?.request({ type: "clone" });
-      } else {
-        const response = await this.client?.request({ type: "get_fork_messages" });
-        const messages = asArray(asRecord(response?.data).messages).map((raw) => asRecord(raw));
-        const selected = await vscode.window.showQuickPick(
-          messages.map((message) => ({ label: truncateContext(String(message.text ?? ""), 120), entryId: String(message.entryId ?? "") })),
-          { title: "Fork Pi Session", placeHolder: "Choose the user message to branch from" },
-        );
-        if (!selected) return;
-        await this.client?.request({ type: "fork", entryId: selected.entryId });
-      }
-      this.post({ type: "clear" });
-      await this.refresh();
-      return;
-    }
-    if (session.file === this.state.sessionFile) {
-      void vscode.window.showWarningMessage("Switch away from the active Pi session before archiving or deleting it.");
-      return;
-    }
-    if (action === "archive") {
-      await archiveSession(session.file);
-      void vscode.window.showInformationMessage("Pi session archived.");
-      return;
-    }
-    if (action === "restore") {
-      await restoreArchivedSession(session.file);
-      void vscode.window.showInformationMessage("Pi session restored.");
-      return;
-    }
-    if (action === "delete") {
-      const confirmed = await vscode.window.showWarningMessage(
-        `Delete “${session.name || firstLine(session.preview)}”?`,
-        { modal: true, detail: "VS Code will use the operating system trash when available." },
-        "Move to Trash",
-      );
-      if (confirmed === "Move to Trash") {
-        await vscode.workspace.fs.delete(vscode.Uri.file(session.file), { recursive: false, useTrash: true });
-      }
-    }
-  }
-
-  private async switchToSession(file: string): Promise<void> {
-    if (!this.client?.running || file === this.state.sessionFile) return;
-    if (this.state.isStreaming) {
-      const stop = await vscode.window.showWarningMessage("Stop the active Pi task and switch sessions?", { modal: true }, "Stop and Switch");
-      if (stop !== "Stop and Switch") return;
-      await this.abort();
-    }
-    const response = await this.client.request({ type: "switch_session", sessionPath: file });
-    if (asRecord(response.data).cancelled === true) return;
-    this.post({ type: "clear" });
-    await this.refresh();
-  }
-
-  private async renameInactiveSession(session: SessionSummary, name: string): Promise<void> {
-    const folder = this.workspaceFolder();
-    if (!folder) return;
-    const config = vscode.workspace.getConfiguration("pi", folder.uri);
-    const executable = config.get<string>("executablePath", "pi").trim() || "pi";
-    const helper = new PiRpcClient((line) => this.output.appendLine(`[Pi session helper] ${line}`));
-    helper.start({
-      executable,
-      cwd: session.cwd,
-      args: ["--no-extensions", "--no-skills", "--no-prompt-templates"],
-      sessionFile: session.file,
-      approveWorkspace: false,
-    });
-    try {
-      await helper.request({ type: "get_state" });
-      await helper.request({ type: "set_session_name", name });
-    } finally {
-      await helper.stop();
-    }
-  }
-
-  private async handleMcpAction(action: string, server: string, command: string): Promise<void> {
-    if (action === "prompt") {
-      this.post({ type: "prefill", text: `/${command} ` });
-      return;
-    }
-    if (action === "config") {
-      await this.openMcpConfig();
-      return;
-    }
-    const client = this.client;
-    if (!client?.running) return;
-    if (action === "reconnect") {
-      await client.request({ type: "prompt", message: `/mcp reconnect${server ? ` ${server}` : ""}` }, 90_000);
-      return;
-    }
-    if (action === "auth") {
-      await client.request({ type: "prompt", message: `/mcp-auth ${server}` }, 180_000);
-      return;
-    }
-    if (action === "logout") {
-      await client.request({ type: "prompt", message: `/mcp logout ${server}` }, 90_000);
-      return;
-    }
-    if (action === "enable" || action === "disable") {
-      await client.request({ type: "prompt", message: `/mcp ${action} ${server}` }, 90_000);
-      await this.restart();
-    }
-  }
-
-  private async openMcpConfig(): Promise<void> {
-    const folder = this.workspaceFolder();
-    if (!folder) return;
-    const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-    const candidates = [
-      join(folder.uri.fsPath, ".mcp.json"),
-      join(folder.uri.fsPath, ".pi", "mcp.json"),
-      join(agentDir, "mcp.json"),
-      join(homedir(), ".config", "mcp", "mcp.json"),
-      join(homedir(), ".agents", "mcp.json"),
-      join(homedir(), ".agents", "mcp", "mcp.json"),
-    ].filter((path) => existsSync(path));
-    if (!candidates.length) {
-      const create = await vscode.window.showInformationMessage("No MCP configuration file was found.", "Create .mcp.json");
-      if (create !== "Create .mcp.json") return;
-      const uri = vscode.Uri.joinPath(folder.uri, ".mcp.json");
-      await vscode.workspace.fs.writeFile(uri, Buffer.from('{\n  "mcpServers": {}\n}\n'));
-      candidates.push(uri.fsPath);
-    }
-    const selected = candidates.length === 1 ? candidates[0] : await vscode.window.showQuickPick(candidates, { title: "Open MCP Configuration" });
-    if (!selected) return;
-    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(vscode.Uri.file(selected)));
   }
 
   private async searchContexts(query: string, requestId: string): Promise<void> {
@@ -994,7 +680,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     });
   }
 
-  private post(message: Record<string, unknown>): void {
+  private post(message: HostToWebviewMessage): void {
     void this.view?.webview.postMessage(message);
   }
 
@@ -1008,38 +694,6 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     const activeUri = vscode.window.activeTextEditor?.document.uri;
     return (activeUri ? vscode.workspace.getWorkspaceFolder(activeUri) : undefined)
       ?? vscode.workspace.workspaceFolders?.[0];
-  }
-
-  private sessionStorageKey(uri: vscode.Uri): string {
-    return `pi.sessionFile:${uri.toString()}`;
-  }
-
-  private sessionsStorageKey(uri: vscode.Uri): string {
-    return `pi.sessions:${uri.toString()}`;
-  }
-
-  private changesStorageKey(uri: vscode.Uri): string {
-    return `pi.latestChangeSet:${uri.toString()}`;
-  }
-
-  private async persistChangeSet(changeSet: ChangeSet): Promise<void> {
-    const folder = this.workspaceFolder();
-    if (folder) await this.context.workspaceState.update(this.changesStorageKey(folder.uri), changeSet);
-  }
-
-  private async rememberSession(uri: vscode.Uri): Promise<void> {
-    const file = this.state.sessionFile;
-    if (!file) return;
-    const key = this.sessionsStorageKey(uri);
-    const sessions = this.context.workspaceState.get<StoredSession[]>(key, []);
-    const current: StoredSession = {
-      file,
-      id: this.state.sessionId,
-      name: this.state.sessionName,
-      updatedAt: Date.now(),
-    };
-    const next = [current, ...sessions.filter((session) => session.file !== file)].slice(0, 50);
-    await this.context.workspaceState.update(key, next);
   }
 
   private html(webview: vscode.Webview): string {
@@ -1072,6 +726,16 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     <button id="thinking" class="selector">thinking: —</button>
   </section>
   <div id="banner" class="banner">Starting Pi…</div>
+  <section id="runtime-health" class="runtime-health hidden" aria-live="polite">
+    <strong id="runtime-health-title">Pi runtime unavailable</strong>
+    <p id="runtime-health-message"></p>
+    <div id="runtime-health-details" class="runtime-health-details"></div>
+    <div class="runtime-health-actions">
+      <button id="runtime-trust" class="hidden">Manage Workspace Trust</button>
+      <button id="runtime-settings">Open Settings</button>
+      <button id="runtime-retry">Retry</button>
+    </div>
+  </section>
   <div id="widget" class="widget hidden"></div>
   <div id="change-summary" class="change-summary hidden"></div>
   <main id="transcript" aria-live="polite"></main>
@@ -1179,30 +843,6 @@ function gitDiff(cwd: string): Promise<string> {
       },
     );
   });
-}
-
-function shortId(id: string | undefined): string {
-  return id ? id.slice(0, 8) : "unknown";
-}
-
-function firstLine(text: string): string {
-  return text.split(/\r?\n/, 1)[0]?.trim() ?? "";
-}
-
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`;
-  return String(tokens);
-}
-
-function relativeTime(timestamp: number): string {
-  const elapsed = Math.max(0, Date.now() - timestamp);
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function randomNonce(): string {

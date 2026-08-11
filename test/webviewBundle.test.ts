@@ -5,7 +5,9 @@ import { JSDOM } from "jsdom";
 
 const shell = `<!doctype html><html><body>
   <span id="status-dot"></span><button id="model"></button><button id="thinking"></button>
-  <div id="banner"></div><div id="widget"></div><div id="change-summary"></div><main id="transcript"></main>
+  <div id="banner"></div>
+  <section id="runtime-health"><strong id="runtime-health-title"></strong><p id="runtime-health-message"></p><div id="runtime-health-details"></div><button id="runtime-trust"></button><button id="runtime-settings"></button><button id="runtime-retry"></button></section>
+  <div id="widget"></div><div id="change-summary"></div><main id="transcript"></main>
   <div id="jump" class="hidden"><button>Jump</button></div>
   <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
   <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>
@@ -35,6 +37,23 @@ describe("bundled Pi webview", () => {
     const bundle = readFileSync(join(process.cwd(), "media", "main.js"), "utf8");
     window.eval(bundle);
     expect(posted.some((message) => message.type === "ready")).toBe(true);
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: {
+        type: "runtimeHealth",
+        health: { status: "missing", executable: "/missing/pi", message: "Pi was not found." },
+      },
+    }));
+    expect(window.document.querySelector("#runtime-health-title")?.textContent).toContain("not installed");
+    expect(window.document.querySelector("#runtime-health-details")?.textContent).toContain("/missing/pi");
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { type: "runtimeHealth", health: { status: "untrusted", message: "Trust is required." } },
+    }));
+    const trustButton = window.document.querySelector("#runtime-trust");
+    expect(trustButton?.classList.contains("hidden")).toBe(false);
+    trustButton?.click();
+    expect(posted.some((message) => message.type === "manageTrust")).toBe(true);
 
     window.dispatchEvent(new window.MessageEvent("message", {
       data: {

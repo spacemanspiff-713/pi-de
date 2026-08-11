@@ -4,7 +4,7 @@ A dedicated, independent VS Code interface powered by the real [Pi coding agent]
 
 Pi Coding Agent for VS Code gives Pi a first-class home in the editor: streaming conversations, native change review, searchable sessions, rich context attachments, and MCP controls—without replacing Pi's runtime or creating a separate configuration silo.
 
-> **Project status:** Early open-source release. v0.3.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+> **Project status:** Early open-source release. v0.3.1 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## Why this project exists
 
@@ -30,6 +30,7 @@ and translates Pi's RPC stream into native VS Code workflows. Your existing Pi s
 - Queued follow-ups and cancellation
 - Pi model and thinking-level selectors
 - Dynamic slash commands from Pi extensions, skills, prompt templates, and MCP prompts
+- Capability-based Pi discovery with actionable runtime-health and Workspace Trust guidance
 
 ### Rich editor context
 
@@ -136,11 +137,11 @@ For Remote SSH, WSL, or development containers, install and configure Pi in that
 The project is not yet published to the VS Code Marketplace. Build and install a VSIX from source:
 
 ```bash
-git clone <repository-url>
-cd pi-vscode
+git clone https://github.com/spacemanspiff-713/pi-de.git
+cd pi-de
 npm install
 npm run package
-code --install-extension pi-vscode-0.3.0.vsix --force
+code --install-extension pi-vscode-0.3.1.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.
@@ -195,7 +196,7 @@ Your models, providers, API credentials, Pi extensions, skills, prompt templates
 ┌──────────────────────────────────────────────────────┐
 │ VS Code extension host                               │
 │                                                      │
-│  PiViewProvider ── sessions / changes / MCP / context│
+│  PiViewProvider ── typed protocol / context / UI      │
 │        │                                             │
 │        │ JSONL RPC                                   │
 │        ▼                                             │
@@ -206,7 +207,7 @@ Your models, providers, API credentials, Pi extensions, skills, prompt templates
 │        ├── Pi JSONL sessions                         │
 │        └── pi-mcp-adapter                            │
 │                                                      │
-│  Webview ◀──── validated/bounded host messages       │
+│  Webview TS modules ◀── typed, bounded messages      │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -246,18 +247,27 @@ npm run package        # Validate and create a VSIX
 ### Source map
 
 ```text
-src/extension.ts          VS Code activation and commands
-src/piViewProvider.ts     Current host/webview controller
-src/piRpcClient.ts        Pi sidecar and JSONL RPC transport
-src/contextMentions.ts    @context parsing and bounds
-src/changeReview.ts       Git checkpoints and file restoration
-src/sessionLibrary.ts     Pi JSONL session indexing
-pi-bridge/index.ts        Pi-to-VS Code MCP status bridge
-webview/main.js           Webview source
-media/main.css            Webview styling
+src/extension.ts                     VS Code activation and commands
+src/piViewProvider.ts                View composition, context, and RPC event translation
+src/protocol.ts                      Shared typed host/webview protocol
+src/runtime/piRuntime.ts             Runtime ownership and central event stream
+src/runtime/piCapabilities.ts        Capability-based Pi runtime probing
+src/runtime/piExecutable.ts          Cross-platform Pi executable discovery
+src/controllers/sessionController.ts Session UI/actions and persistence
+src/controllers/changeReviewController.ts Git review orchestration
+src/controllers/mcpController.ts     MCP status and command controls
+src/controllers/extensionUiBridge.ts Pi extension UI routing
+src/piRpcClient.ts                   Pi sidecar JSONL transport
+src/contextMentions.ts               @context parsing and bounds
+src/changeReview.ts                  Git checkpoints and file restoration
+src/sessionLibrary.ts                Pi JSONL session indexing
+pi-bridge/index.ts                   Pi-to-VS Code MCP status bridge
+webview/main.ts                      Typed webview entry point
+webview/runtimeHealth.ts             Runtime onboarding UI
+media/main.css                       Webview styling
 ```
 
-Do not edit `media/main.js` directly; it is generated from `webview/main.js`.
+Do not edit `media/main.js` directly; it is generated from the TypeScript modules under `webview/`.
 
 ## Testing
 
@@ -268,7 +278,10 @@ The current suite covers:
 - dirty/staged/untracked Git checkpoint safety;
 - exact per-file restoration;
 - session JSONL metadata and archive behavior;
-- webview Markdown, links, change review, and MCP rendering.
+- webview Markdown, links, runtime onboarding, change review, and MCP rendering;
+- recorded Pi RPC and CLI capability contracts;
+- executable discovery and typed webview-message validation;
+- VS Code Extension Host activation, command, and workspace-capability behavior.
 
 Changes to runtime startup, Pi RPC events, packaging, or `pi-bridge` should also be smoke-tested against a real Pi installation.
 
@@ -290,15 +303,14 @@ Please do not include API keys, OAuth tokens, proprietary session transcripts, o
 
 Near-term work includes:
 
-1. Modular host/webview architecture and stronger integration tests
-2. Session export, pinning, compact/reload actions, and runtime health
-3. Package, extension, skill, prompt, and agent resource management
-4. A bounded read-only VS Code diagnostics/symbol bridge
-5. Persistent multi-session tabs and background sessions
-6. Read-only Agent Lab subagents
-7. Git-worktree-isolated coding agents with native diff review
+1. Session export, pinning, compact/reload actions, and richer runtime status
+2. Package, extension, skill, prompt, and agent resource management
+3. A bounded read-only VS Code diagnostics/symbol bridge
+4. Persistent multi-session tabs and background sessions
+5. Read-only Agent Lab subagents
+6. Git-worktree-isolated coding agents with native diff review
 
-The detailed checklist is maintained in [GAMEPLAN.md](GAMEPLAN.md).
+The detailed checklist is maintained in [GAMEPLAN.md](GAMEPLAN.md). Third-party design references and dependency notices are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Inspiration and attribution
 

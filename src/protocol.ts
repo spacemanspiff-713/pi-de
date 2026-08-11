@@ -1,0 +1,169 @@
+import type { ChangeSet } from "./changeReview";
+
+export interface PiModelState {
+  id?: string;
+  name?: string;
+  provider?: string;
+}
+
+export interface PiState {
+  model?: PiModelState | null;
+  thinkingLevel?: string;
+  isStreaming?: boolean;
+  sessionFile?: string;
+  sessionId?: string;
+  sessionName?: string;
+}
+
+export interface NormalizedMessage {
+  role: string;
+  text: string;
+  thinking?: string;
+  toolName?: string;
+  isError?: boolean;
+}
+
+export interface PiCommandInfo {
+  name: string;
+  description?: string;
+  source?: string;
+}
+
+export interface ContextCompletionItem {
+  label: string;
+  description: string;
+  insertText: string;
+  kind: "context" | "file";
+}
+
+export interface McpServerSnapshot {
+  name: string;
+  status: string;
+  toolCount?: number;
+  resourceCount?: number;
+  disabled?: boolean;
+}
+
+export interface McpStatusSnapshot {
+  servers: McpServerSnapshot[];
+  totalTools?: number;
+  totalResources?: number;
+  connectedCount?: number;
+  disabledCount?: number;
+}
+
+export type RuntimeHealthStatus = "checking" | "ready" | "missing" | "incompatible" | "untrusted" | "no-workspace" | "error";
+
+export interface RuntimeHealth {
+  status: RuntimeHealthStatus;
+  executable?: string;
+  version?: string;
+  message: string;
+  capabilities?: {
+    rpc: boolean;
+    session: boolean;
+    approve: boolean;
+    extensions: boolean;
+  };
+}
+
+export type WebviewToHostMessage =
+  | { type: "ready" }
+  | { type: "prompt"; text: string }
+  | { type: "abort" }
+  | { type: "newSession" }
+  | { type: "openSession" }
+  | { type: "restart" }
+  | { type: "pickModel" }
+  | { type: "pickThinking" }
+  | { type: "contextSearch"; query: string; requestId: string }
+  | { type: "copyText"; text: string }
+  | { type: "insertText"; text: string }
+  | { type: "openLink"; href: string }
+  | { type: "reviewChanges" }
+  | { type: "openDiff"; path: string }
+  | { type: "acceptChange"; path: string }
+  | { type: "revertChange"; path: string }
+  | { type: "mcpAction"; action: string; server?: string; command?: string }
+  | { type: "openMcpConfig" }
+  | { type: "showOutput" }
+  | { type: "manageTrust" }
+  | { type: "openRuntimeSettings" }
+  | { type: "retryRuntime" };
+
+export type HostToWebviewMessage =
+  | { type: "connection"; status: string; message: string }
+  | { type: "runtimeHealth"; health: RuntimeHealth }
+  | { type: "history"; messages: NormalizedMessage[] }
+  | { type: "commands"; commands: PiCommandInfo[] }
+  | { type: "contextResults"; requestId: string; items: ContextCompletionItem[] }
+  | ({ type: "state" } & PiState)
+  | { type: "clear" }
+  | { type: "userPrompt"; text: string }
+  | { type: "textDelta"; delta: string }
+  | { type: "thinkingDelta"; delta: string }
+  | { type: "messageEnd"; role: unknown }
+  | { type: "toolStart"; id: unknown; name: unknown; args: unknown }
+  | { type: "toolUpdate"; id: unknown; result: unknown }
+  | { type: "toolEnd"; id: unknown; result: unknown; isError: boolean }
+  | { type: "busy"; value: boolean }
+  | { type: "notice"; message: string }
+  | { type: "error"; message: string }
+  | { type: "extensionStatus"; key: unknown; text: unknown }
+  | { type: "widget"; key: unknown; lines: string[] }
+  | { type: "prefill"; text: unknown }
+  | { type: "changeSet"; changeSet: ChangeSet }
+  | { type: "showChanges"; changeSet: ChangeSet }
+  | { type: "hideChanges" }
+  | { type: "mcpStatus"; snapshot: McpStatusSnapshot }
+  | { type: "mcpPrompts"; prompts: PiCommandInfo[] }
+  | { type: "queue"; steering: unknown; followUp: unknown };
+
+export function parseWebviewMessage(value: unknown): WebviewToHostMessage | undefined {
+  if (!isRecord(value) || typeof value.type !== "string") return undefined;
+  const noData = new Set([
+    "ready", "abort", "newSession", "openSession", "restart", "pickModel", "pickThinking",
+    "reviewChanges", "openMcpConfig", "showOutput", "manageTrust", "openRuntimeSettings", "retryRuntime",
+  ]);
+  if (noData.has(value.type)) return { type: value.type } as WebviewToHostMessage;
+  if (["prompt", "copyText", "insertText"].includes(value.type)) {
+    const text = boundedString(value.text, 2 * 1024 * 1024);
+    return text === undefined ? undefined : { type: value.type, text } as WebviewToHostMessage;
+  }
+  if (value.type === "openLink") {
+    const href = boundedString(value.href, 8 * 1024);
+    return href === undefined ? undefined : { type: value.type, href };
+  }
+  if (["openDiff", "acceptChange", "revertChange"].includes(value.type)) {
+    const path = boundedString(value.path, 32 * 1024);
+    return path === undefined ? undefined : { type: value.type, path } as WebviewToHostMessage;
+  }
+  if (value.type === "contextSearch") {
+    const query = boundedString(value.query, 4 * 1024);
+    const requestId = boundedString(value.requestId, 256);
+    return query === undefined || requestId === undefined
+      ? undefined
+      : { type: value.type, query, requestId };
+  }
+  if (value.type === "mcpAction") {
+    const action = boundedString(value.action, 64);
+    const server = optionalBoundedString(value.server, 512);
+    const command = optionalBoundedString(value.command, 512);
+    if (!action || server === undefined || command === undefined) return undefined;
+    return { type: value.type, action, server, command };
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function boundedString(value: unknown, maxLength: number): string | undefined {
+  return typeof value === "string" && value.length <= maxLength ? value : undefined;
+}
+
+function optionalBoundedString(value: unknown, maxLength: number): string | undefined {
+  if (value === undefined) return "";
+  return boundedString(value, maxLength);
+}
