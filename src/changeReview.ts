@@ -58,7 +58,7 @@ export class GitChangeReview {
 
     const id = `${Date.now()}-${randomBytes(4).toString("hex")}`;
     const { commit } = await createCheckpoint(root, id);
-    const checkpointRef = `refs/pi-vscode/checkpoints/${id}`;
+    const checkpointRef = `refs/pide/checkpoints/${id}`;
     await git(root, ["update-ref", checkpointRef, commit]);
     await pruneCheckpointRefs(root, 25).catch(() => undefined);
     this.active = { id, prompt, root, checkpoint: commit, checkpointRef, startedAt: Date.now() };
@@ -152,7 +152,7 @@ export class GitChangeReview {
 }
 
 async function pruneCheckpointRefs(root: string, keep: number): Promise<void> {
-  const result = await git(root, ["for-each-ref", "--sort=-refname", "--format=%(refname)", "refs/pi-vscode/checkpoints/"]);
+  const result = await git(root, ["for-each-ref", "--sort=-refname", "--format=%(refname)", "refs/pide/checkpoints/"]);
   const refs = result.stdout.split(/\r?\n/).filter(Boolean);
   await Promise.all(refs.slice(keep).map((ref) => git(root, ["update-ref", "-d", ref])));
 }
@@ -160,13 +160,13 @@ async function pruneCheckpointRefs(root: string, keep: number): Promise<void> {
 async function createCheckpoint(root: string, id: string): Promise<{ tree: string; commit: string }> {
   const { tree } = await snapshotWorkingTree(root);
   const head = (await git(root, ["rev-parse", "--verify", "HEAD"], { allowFailure: true })).stdout.trim();
-  const args = ["commit-tree", tree, "-m", `Pi VS Code checkpoint ${id}`];
+  const args = ["commit-tree", tree, "-m", `PiDE checkpoint ${id}`];
   if (head) args.push("-p", head);
   const env = {
     GIT_AUTHOR_NAME: "Pi VS Code",
-    GIT_AUTHOR_EMAIL: "pi-vscode@local",
+    GIT_AUTHOR_EMAIL: "pide@local",
     GIT_COMMITTER_NAME: "Pi VS Code",
-    GIT_COMMITTER_EMAIL: "pi-vscode@local",
+    GIT_COMMITTER_EMAIL: "pide@local",
   };
   const commit = (await git(root, args, { env })).stdout.trim();
   if (!commit) throw new Error("Git did not create a checkpoint commit");
@@ -174,7 +174,7 @@ async function createCheckpoint(root: string, id: string): Promise<{ tree: strin
 }
 
 async function snapshotWorkingTree(root: string): Promise<{ tree: string }> {
-  const temp = await mkdtemp(resolve(tmpdir(), "pi-vscode-index-"));
+  const temp = await mkdtemp(resolve(tmpdir(), "pide-index-"));
   const index = resolve(temp, "index");
   try {
     const actualIndex = (await git(root, ["rev-parse", "--git-path", "index"])).stdout.trim();

@@ -5,8 +5,8 @@ import * as vscode from "vscode";
 import type { PiCommandInfo, McpStatusSnapshot } from "../protocol";
 import type { PiRpcClient } from "../piRpcClient";
 
-const MCP_WIDGET_KEY = "pi-vscode:mcp-status";
-const MCP_SENTINEL = "__PI_VSCODE_MCP_STATUS__";
+const MCP_WIDGET_KEY = "pide:mcp-status";
+const MCP_SENTINEL = "__PIDE_MCP_STATUS__";
 
 export class McpController {
   private current?: McpStatusSnapshot;

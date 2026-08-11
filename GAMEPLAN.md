@@ -1,4 +1,4 @@
-# Pi Coding Agent for VS Code — Gameplan
+# PiDE (Pi Development Environment) — Gameplan
 
 This document is the project ledger: what has shipped, what is currently true, and what we intend to build next.
 
@@ -26,7 +26,7 @@ The extension should eventually provide:
 
 - [x] Use `pi --mode rpc` rather than recreating Pi with a separate agent implementation.
 - [x] Keep Pi's settings, credentials, packages, extensions, skills, prompt templates, MCP configuration, and JSONL sessions authoritative.
-- [x] Use a dedicated Pi Activity Bar interface independent of Copilot.
+- [x] Use a dedicated PiDE Activity Bar interface independent of Copilot.
 - [x] Prefer stable VS Code APIs.
 - [x] Let Pi own tool and MCP execution.
 - [x] Preserve and reuse existing user/project Pi configuration.
@@ -46,9 +46,10 @@ The extension should eventually provide:
 - [x] Added Vitest and JSDOM testing.
 - [x] Added VS Code development launch/tasks configuration.
 - [x] Added VSIX packaging and local installation workflow.
-- [x] Added a dedicated Pi Activity Bar container and icon.
-- [x] Packaged and installed v0.3.0 as `pidaddylabs.pi-vscode`.
+- [x] Added a dedicated PiDE Activity Bar container and icon.
+- [x] Packaged and installed v0.3.0 as `pidaddylabs.pide`.
 - [x] Packaged, Extension Host-tested, and locally installed the Phase 0 hardening release v0.3.1.
+- [x] Renamed the product and extension to **PiDE** (Pi Development Environment), using `assets/PiDE.jpg` for its package, repository, and Activity Bar image.
 
 ## Pi runtime and RPC integration
 
@@ -126,7 +127,7 @@ The extension should eventually provide:
 - [x] Capture a checkpoint before each non-slash Pi task.
 - [x] Use a temporary Git index so the user's real index is untouched.
 - [x] Preserve pre-existing tracked, staged, dirty, and untracked work.
-- [x] Store checkpoint commits under `refs/pi-vscode/checkpoints/`.
+- [x] Store checkpoint commits under `refs/pide/checkpoints/`.
 - [x] Prune old checkpoint refs.
 - [x] Calculate changed files after Pi settles.
 - [x] Track added, modified, deleted, and renamed paths.
@@ -169,11 +170,11 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.3.1`
-- Extension ID: `pidaddylabs.pi-vscode`
+- Version: `0.3.2`
+- Extension ID: `pidaddylabs.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
-- Tests at v0.3.1: 17 Vitest tests plus 2 Extension Host integration checks
+- Tests at v0.3.2: 17 Vitest tests plus 3 Extension Host integration checks
 - Current UI model: one capability-probed RPC runtime in a retained Activity Bar webview
 
 ---

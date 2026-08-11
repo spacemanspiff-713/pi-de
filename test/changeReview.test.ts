@@ -18,7 +18,7 @@ describe("GitChangeReview", () => {
   });
 
   it("checkpoints dirty work, detects task changes, and reverts one file", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-vscode-change-test-"));
+    const root = await mkdtemp(join(tmpdir(), "pide-change-test-"));
     cleanups.push(root);
     git(root, "init", "-b", "main");
     git(root, "config", "user.name", "Test");

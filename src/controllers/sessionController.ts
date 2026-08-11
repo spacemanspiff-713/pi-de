@@ -178,7 +178,7 @@ export class SessionController {
   private async renameInactive(session: SessionSummary, name: string): Promise<void> {
     const folder = this.dependencies.workspaceFolder();
     if (!folder) return;
-    const configured = vscode.workspace.getConfiguration("pi", folder.uri).get<string>("executablePath", "pi");
+    const configured = vscode.workspace.getConfiguration("pide", folder.uri).get<string>("executablePath", "pi");
     const executable = await resolvePiExecutable({ configured });
     const helper = new PiRpcClient((line) => this.dependencies.output.appendLine(`[Pi session helper] ${line}`));
     helper.start({

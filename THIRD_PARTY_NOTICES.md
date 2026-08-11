@@ -1,6 +1,6 @@
 # Third-Party Notices and Design References
 
-Pi Coding Agent for VS Code is distributed under the MIT License in [LICENSE](LICENSE).
+PiDE (Pi Development Environment) is distributed under the MIT License in [LICENSE](LICENSE).
 
 ## Runtime and libraries
 

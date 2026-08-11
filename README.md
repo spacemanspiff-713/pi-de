@@ -1,10 +1,12 @@
-# Pi Coding Agent for VS Code
+# PiDE — Pi Development Environment
 
-A dedicated, independent VS Code interface powered by the real [Pi coding agent](https://pi.dev).
+![PiDE](assets/PiDE.jpg)
 
-Pi Coding Agent for VS Code gives Pi a first-class home in the editor: streaming conversations, native change review, searchable sessions, rich context attachments, and MCP controls—without replacing Pi's runtime or creating a separate configuration silo.
+A dedicated, independent VS Code development environment powered by the real [Pi coding agent](https://pi.dev).
 
-> **Project status:** Early open-source release. v0.3.1 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+PiDE gives Pi a first-class home in the editor: streaming conversations, native change review, searchable sessions, rich context attachments, and MCP controls—without replacing Pi's runtime or creating a separate configuration silo.
+
+> **Project status:** Early open-source release. v0.3.2 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## Why this project exists
 
@@ -20,9 +22,9 @@ and translates Pi's RPC stream into native VS Code workflows. Your existing Pi s
 
 ## Highlights
 
-### Dedicated Pi workspace
+### Dedicated PiDE workspace
 
-- Independent **Pi** Activity Bar view
+- Independent **PiDE** Activity Bar view
 - Streaming assistant text and reasoning
 - Sanitized Markdown, tables, links, and syntax highlighting
 - Expandable tool cards with state and output
@@ -141,18 +143,24 @@ git clone https://github.com/spacemanspiff-713/pi-de.git
 cd pi-de
 npm install
 npm run package
-code --install-extension pi-vscode-0.3.1.vsix --force
+code --install-extension pide-0.3.2.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.
+
+> **Upgrading from the pre-PiDE build?** The extension identifier changed from `pidaddylabs.pi-vscode` to `pidaddylabs.pide`. Remove the legacy local extension before installing PiDE so only one Pi sidecar can start:
+>
+> ```bash
+> code --uninstall-extension pidaddylabs.pi-vscode
+> ```
 
 Alternatively, press `F5` from the repository to launch an Extension Development Host.
 
 ## Getting started
 
 1. Open a trusted folder in VS Code.
-2. Select the **Pi** icon in the Activity Bar.
-3. Optionally move the Pi view to the Secondary Side Bar.
+2. Select the **PiDE** icon in the Activity Bar.
+3. Optionally move the PiDE view to the Secondary Side Bar.
 4. Send a prompt.
 5. Type `@` to attach editor/workspace context.
 6. Type `/` to browse commands exposed by your Pi runtime.
@@ -170,23 +178,23 @@ The header provides shortcuts for:
 
 | Command | Purpose |
 | --- | --- |
-| `Pi: Open Chat` | Reveal and focus the Pi view |
-| `Pi: New Session` | Start a new Pi session |
-| `Pi: Open Session` | Open the searchable session library |
-| `Pi: Review Changes` | Review the latest Pi task's file changes |
-| `Pi: Stop Agent` | Abort active Pi work |
-| `Pi: Restart Agent` | Restart the Pi RPC sidecar |
-| `Pi: Ask Pi About Selection` | Open Pi with the current editor selection attached |
+| `PiDE: Open Chat` | Reveal and focus the PiDE view |
+| `PiDE: New Session` | Start a new Pi session |
+| `PiDE: Open Session` | Open the searchable session library |
+| `PiDE: Review Changes` | Review the latest Pi task's file changes |
+| `PiDE: Stop Agent` | Abort active Pi work |
+| `PiDE: Restart Agent` | Restart the Pi RPC sidecar |
+| `PiDE: Ask Pi About Selection` | Open PiDE with the current editor selection attached |
 
 ## Configuration
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `pi.executablePath` | `pi` | Pi executable used for RPC mode |
-| `pi.extraArgs` | `[]` | Additional arguments passed to Pi |
-| `pi.approveTrustedWorkspace` | `true` | Pass Pi project-resource approval after VS Code trust is granted |
-| `pi.showThinking` | `true` | Display streamed reasoning in collapsible blocks |
-| `pi.gitCheckpoints` | `true` | Capture a non-destructive pre-task Git checkpoint for review/revert |
+| `pide.executablePath` | `pi` | Pi executable used for RPC mode |
+| `pide.extraArgs` | `[]` | Additional arguments passed to Pi |
+| `pide.approveTrustedWorkspace` | `true` | Pass Pi project-resource approval after VS Code trust is granted |
+| `pide.showThinking` | `true` | Display streamed reasoning in collapsible blocks |
+| `pide.gitCheckpoints` | `true` | Capture a non-destructive pre-task Git checkpoint for review/revert |
 
 Your models, providers, API credentials, Pi extensions, skills, prompt templates, sessions, and MCP configuration remain in Pi's normal configuration directories.
 
@@ -342,4 +350,4 @@ Security-sensitive features—package installation, credentials, editor mutation
 
 ## Project relationship
 
-This is a community-built interface for Pi. It is not an official Pi or VS Code product and is not affiliated with GitHub Copilot.
+PiDE is a community-built development environment for Pi. It is not an official Pi or VS Code product and is not affiliated with GitHub Copilot.

@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { PiViewProvider } from "./piViewProvider";
 
 export function activate(context: vscode.ExtensionContext): void {
-  const output = vscode.window.createOutputChannel("Pi Coding Agent", { log: true });
+  const output = vscode.window.createOutputChannel("PiDE", { log: true });
   const provider = new PiViewProvider(context, output);
 
   context.subscriptions.push(
@@ -11,14 +11,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(PiViewProvider.viewType, provider, {
       webviewOptions: { retainContextWhenHidden: true },
     }),
-    vscode.workspace.registerTextDocumentContentProvider("pi-change", provider),
-    vscode.commands.registerCommand("pi.openChat", () => provider.reveal()),
-    vscode.commands.registerCommand("pi.newSession", () => provider.newSession()),
-    vscode.commands.registerCommand("pi.openSession", () => provider.openSession()),
-    vscode.commands.registerCommand("pi.reviewChanges", () => provider.reviewChanges()),
-    vscode.commands.registerCommand("pi.abort", () => provider.abort()),
-    vscode.commands.registerCommand("pi.restart", () => provider.restart()),
-    vscode.commands.registerCommand("pi.askSelection", async () => {
+    vscode.workspace.registerTextDocumentContentProvider("pide-change", provider),
+    vscode.commands.registerCommand("pide.openChat", () => provider.reveal()),
+    vscode.commands.registerCommand("pide.newSession", () => provider.newSession()),
+    vscode.commands.registerCommand("pide.openSession", () => provider.openSession()),
+    vscode.commands.registerCommand("pide.reviewChanges", () => provider.reviewChanges()),
+    vscode.commands.registerCommand("pide.abort", () => provider.abort()),
+    vscode.commands.registerCommand("pide.restart", () => provider.restart()),
+    vscode.commands.registerCommand("pide.askSelection", async () => {
       await provider.reveal();
       provider.prefillForSelection();
     }),
@@ -26,11 +26,11 @@ export function activate(context: vscode.ExtensionContext): void {
       void provider.restart();
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (!event.affectsConfiguration("pi.executablePath")
-        && !event.affectsConfiguration("pi.extraArgs")
-        && !event.affectsConfiguration("pi.approveTrustedWorkspace")) return;
+      if (!event.affectsConfiguration("pide.executablePath")
+        && !event.affectsConfiguration("pide.extraArgs")
+        && !event.affectsConfiguration("pide.approveTrustedWorkspace")) return;
       void vscode.window.showInformationMessage(
-        "Pi configuration changed. Restart the Pi agent to apply it.",
+        "PiDE configuration changed. Restart the Pi runtime to apply it.",
         "Restart",
       ).then((choice) => {
         if (choice === "Restart") void provider.restart();

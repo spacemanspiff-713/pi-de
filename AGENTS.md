@@ -4,7 +4,7 @@ This file tells coding agents and human contributors how to work safely and effe
 
 ## Project overview
 
-Pi Coding Agent for VS Code is a dedicated VS Code interface for the real [Pi coding agent](https://pi.dev). It is not a second agent implementation and it is not a wrapper around VS Code Copilot.
+PiDE (Pi Development Environment) is a dedicated VS Code interface for the real [Pi coding agent](https://pi.dev). It is not a second agent implementation and it is not a wrapper around VS Code Copilot.
 
 The extension launches `pi --mode rpc` as a workspace-sidecar process, translates Pi's JSONL RPC events into a VS Code webview, and sends user actions back through Pi's documented RPC protocol. Pi remains responsible for models, credentials, tools, extensions, skills, prompt templates, sessions, MCP, compaction, retries, and agent behavior.
 
@@ -26,7 +26,7 @@ Current product status and future work are tracked in [GAMEPLAN.md](GAMEPLAN.md)
 ## Repository layout
 
 ```text
-pi-vscode/
+pi-de/
 ├── src/
 │   ├── extension.ts          # VS Code activation and command registration
 │   ├── piViewProvider.ts     # View composition, context, RPC event translation
@@ -82,7 +82,7 @@ npm run package
 Install the result locally:
 
 ```bash
-code --install-extension pi-vscode-<version>.vsix --force
+code --install-extension pide-<version>.vsix --force
 ```
 
 Reload VS Code after installing a new local build.
@@ -143,7 +143,7 @@ When adding a subsystem, add focused tests instead of extending only the broad w
 - Validate all data crossing RPC or webview boundaries. Treat it as untrusted input.
 - Use `vscode.Uri` and `vscode.workspace.fs` when VS Code resource semantics matter.
 - Keep filesystem and Git operations outside the webview.
-- Log operational diagnostics to the `Pi Coding Agent` output channel without including prompt contents or credentials unless explicitly needed for debugging.
+- Log operational diagnostics to the `PiDE` output channel without including prompt contents or credentials unless explicitly needed for debugging.
 - Prefer capability checks over hard-coded Pi version checks.
 - Keep shutdown idempotent; processes must be terminated when views, runtimes, or the extension are disposed.
 
@@ -168,7 +168,7 @@ When adding a subsystem, add focused tests instead of extending only the broad w
 
 ### Git change review
 
-- Checkpoints use temporary Git indexes and refs under `refs/pi-vscode/checkpoints/`.
+- Checkpoints use temporary Git indexes and refs under `refs/pi-de/checkpoints/`.
 - Never mutate the user's real index while capturing a checkpoint.
 - Revert restores the captured pre-task tree, not repository `HEAD`.
 - “Accept” means “keep and mark reviewed”; it does not stage or commit the file.

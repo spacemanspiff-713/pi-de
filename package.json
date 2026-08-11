@@ -1,8 +1,8 @@
 {
-  "name": "pi-vscode",
-  "displayName": "Pi Coding Agent",
-  "description": "A dedicated VS Code interface for the Pi coding agent.",
-  "version": "0.3.1",
+  "name": "pide",
+  "displayName": "PiDE",
+  "description": "Pi Development Environment: a dedicated VS Code interface for the Pi coding agent.",
+  "version": "0.3.2",
   "publisher": "pidaddylabs",
   "private": true,
   "license": "MIT",
@@ -23,7 +23,9 @@
     "Other"
   ],
   "keywords": [
+    "pide",
     "pi",
+    "development-environment",
     "agent",
     "chat",
     "coding",
@@ -48,103 +50,103 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "pi",
-          "title": "Pi",
-          "icon": "assets/pi.svg"
+          "id": "pide",
+          "title": "PiDE",
+          "icon": "assets/PiDE.jpg"
         }
       ]
     },
     "views": {
-      "pi": [
+      "pide": [
         {
           "type": "webview",
-          "id": "pi.chatView",
-          "name": "Pi Chat"
+          "id": "pide.chatView",
+          "name": "PiDE Chat"
         }
       ]
     },
     "commands": [
       {
-        "command": "pi.openChat",
-        "category": "Pi",
+        "command": "pide.openChat",
+        "category": "PiDE",
         "title": "Open Chat"
       },
       {
-        "command": "pi.newSession",
-        "category": "Pi",
+        "command": "pide.newSession",
+        "category": "PiDE",
         "title": "New Session",
         "icon": "$(add)"
       },
       {
-        "command": "pi.openSession",
-        "category": "Pi",
+        "command": "pide.openSession",
+        "category": "PiDE",
         "title": "Open Session",
         "icon": "$(history)"
       },
       {
-        "command": "pi.reviewChanges",
-        "category": "Pi",
+        "command": "pide.reviewChanges",
+        "category": "PiDE",
         "title": "Review Changes",
         "icon": "$(diff-multiple)"
       },
       {
-        "command": "pi.abort",
-        "category": "Pi",
+        "command": "pide.abort",
+        "category": "PiDE",
         "title": "Stop Agent",
         "icon": "$(debug-stop)"
       },
       {
-        "command": "pi.restart",
-        "category": "Pi",
+        "command": "pide.restart",
+        "category": "PiDE",
         "title": "Restart Agent",
         "icon": "$(refresh)"
       },
       {
-        "command": "pi.askSelection",
-        "category": "Pi",
+        "command": "pide.askSelection",
+        "category": "PiDE",
         "title": "Ask Pi About Selection"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "pi.newSession",
+          "command": "pide.newSession",
           "group": "navigation@1",
-          "when": "view == pi.chatView"
+          "when": "view == pide.chatView"
         },
         {
-          "command": "pi.openSession",
+          "command": "pide.openSession",
           "group": "navigation@2",
-          "when": "view == pi.chatView"
+          "when": "view == pide.chatView"
         },
         {
-          "command": "pi.reviewChanges",
+          "command": "pide.reviewChanges",
           "group": "navigation@3",
-          "when": "view == pi.chatView"
+          "when": "view == pide.chatView"
         },
         {
-          "command": "pi.restart",
+          "command": "pide.restart",
           "group": "navigation@4",
-          "when": "view == pi.chatView"
+          "when": "view == pide.chatView"
         }
       ],
       "editor/context": [
         {
-          "command": "pi.askSelection",
+          "command": "pide.askSelection",
           "group": "navigation@50",
           "when": "editorHasSelection"
         }
       ]
     },
     "configuration": {
-      "title": "Pi Coding Agent",
+      "title": "PiDE",
       "properties": {
-        "pi.executablePath": {
+        "pide.executablePath": {
           "type": "string",
           "default": "pi",
           "description": "Path to the Pi executable used for RPC mode."
         },
-        "pi.extraArgs": {
+        "pide.extraArgs": {
           "type": "array",
           "items": {
             "type": "string"
@@ -152,17 +154,17 @@
           "default": [],
           "description": "Additional arguments passed to Pi before RPC mode starts."
         },
-        "pi.approveTrustedWorkspace": {
+        "pide.approveTrustedWorkspace": {
           "type": "boolean",
           "default": true,
           "description": "Pass --approve to Pi after VS Code Workspace Trust has been granted, enabling trusted project-local Pi resources for this run."
         },
-        "pi.showThinking": {
+        "pide.showThinking": {
           "type": "boolean",
           "default": true,
           "description": "Show streamed reasoning in a collapsible section."
         },
-        "pi.gitCheckpoints": {
+        "pide.gitCheckpoints": {
           "type": "boolean",
           "default": true,
           "description": "Create a non-destructive Git checkpoint of the current working tree before each new Pi task, enabling per-file diff and revert."
@@ -198,5 +200,6 @@
     "dompurify": "^3.4.13",
     "highlight.js": "^11.11.2",
     "markdown-it": "^15.0.0"
-  }
+  },
+  "icon": "assets/PiDE.jpg"
 }

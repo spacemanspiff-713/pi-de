@@ -43,7 +43,7 @@ export async function probePiRuntime(executable: string): Promise<RuntimeHealth>
       status: missing ? "missing" : "error",
       executable,
       message: missing
-        ? `Pi was not found at “${executable}”. Install Pi or configure pi.executablePath.`
+        ? `Pi was not found at “${executable}”. Install Pi or configure pide.executablePath.`
         : `Pi could not be inspected: ${detail}`,
     };
   }

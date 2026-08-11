@@ -25,7 +25,7 @@ interface ContextCompletion {
 }
 
 export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-  static readonly viewType = "pi.chatView";
+  static readonly viewType = "pide.chatView";
 
   private view?: vscode.WebviewView;
   private startPromise?: Promise<void>;
@@ -86,7 +86,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   async reveal(): Promise<void> {
-    await vscode.commands.executeCommand("workbench.view.extension.pi");
+    await vscode.commands.executeCommand("workbench.view.extension.pide");
     this.view?.show?.(true);
   }
 
@@ -167,7 +167,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       return;
     }
 
-    const config = vscode.workspace.getConfiguration("pi", folder.uri);
+    const config = vscode.workspace.getConfiguration("pide", folder.uri);
     const configuredExecutable = config.get<string>("executablePath", "pi").trim() || "pi";
     const extraArgs = config.get<string[]>("extraArgs", []);
     const approveWorkspace = config.get<boolean>("approveTrustedWorkspace", true);
@@ -330,7 +330,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         await vscode.commands.executeCommand("workbench.trust.manage");
         break;
       case "openRuntimeSettings":
-        await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pidaddylabs.pi-vscode");
+        await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pidaddylabs.pide");
         break;
       case "retryRuntime":
         await this.restart();
@@ -348,7 +348,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     if (
       !this.state.isStreaming
       && !prompt.startsWith("/")
-      && vscode.workspace.getConfiguration("pi").get<boolean>("gitCheckpoints", true)
+      && vscode.workspace.getConfiguration("pide").get<boolean>("gitCheckpoints", true)
     ) {
       const folder = this.workspaceFolder();
       if (folder) {
@@ -462,7 +462,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         } else if (
           event.type === "thinking_delta"
           && typeof event.delta === "string"
-          && vscode.workspace.getConfiguration("pi").get<boolean>("showThinking", true)
+          && vscode.workspace.getConfiguration("pide").get<boolean>("showThinking", true)
         ) {
           this.post({ type: "thinkingDelta", delta: event.delta });
         }
@@ -707,11 +707,11 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
   <link rel="stylesheet" href="${style}">
-  <title>Pi Chat</title>
+  <title>PiDE</title>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="status-dot" id="status-dot"></span><strong>Pi</strong></div>
+    <div class="brand"><span class="status-dot" id="status-dot"></span><strong>PiDE</strong></div>
     <div class="actions">
       <button id="sessions" title="Session library">◷</button>
       <button id="changes" class="hidden" title="Review changes">Δ</button>
@@ -740,8 +740,8 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   <div id="change-summary" class="change-summary hidden"></div>
   <main id="transcript" aria-live="polite"></main>
   <div id="jump" class="jump hidden"><button>Jump to latest</button></div>
-  <section id="changes-panel" class="control-panel hidden" aria-label="Pi changes">
-    <header><strong>Pi Changes</strong><button data-close-panel="changes-panel">×</button></header>
+  <section id="changes-panel" class="control-panel hidden" aria-label="PiDE changes">
+    <header><strong>PiDE Changes</strong><button data-close-panel="changes-panel">×</button></header>
     <div id="changes-totals" class="panel-summary"></div>
     <div id="changes-list" class="panel-list"></div>
   </section>

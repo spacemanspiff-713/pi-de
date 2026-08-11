@@ -64,12 +64,12 @@ export class ChangeReviewController implements vscode.TextDocumentContentProvide
     await vscode.commands.executeCommand(
       "vscode.diff",
       vscode.Uri.from({
-        scheme: "pi-change",
+        scheme: "pide-change",
         path: uriPath,
         query: new URLSearchParams({ side: "before", path, revision }).toString(),
       }),
       vscode.Uri.from({
-        scheme: "pi-change",
+        scheme: "pide-change",
         path: uriPath,
         query: new URLSearchParams({ side: "after", path, revision }).toString(),
       }),

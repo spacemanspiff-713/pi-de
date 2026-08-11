@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const MCP_STATUS_EVENT = "pi-mcp-adapter/status/v1";
-const MCP_WIDGET_KEY = "pi-vscode:mcp-status";
+const MCP_WIDGET_KEY = "pide:mcp-status";
 
 /** Bridges Pi extension event-bus state into the RPC extension UI protocol. */
 export default function piVsCodeBridge(pi: ExtensionAPI) {
@@ -11,7 +11,7 @@ export default function piVsCodeBridge(pi: ExtensionAPI) {
   const publish = (snapshot: unknown) => {
     latestSnapshot = snapshot;
     if (!context?.hasUI) return;
-    context.ui.setWidget(MCP_WIDGET_KEY, [`__PI_VSCODE_MCP_STATUS__${JSON.stringify(snapshot)}`]);
+    context.ui.setWidget(MCP_WIDGET_KEY, [`__PIDE_MCP_STATUS__${JSON.stringify(snapshot)}`]);
   };
 
   pi.events.on(MCP_STATUS_EVENT, publish);
