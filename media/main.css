@@ -20,7 +20,7 @@ html, body {
   font-size: var(--vscode-font-size);
 }
 
-body { display: grid; grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto; }
+body { display: grid; grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr) auto; }
 button, textarea { font: inherit; }
 button { color: inherit; }
 .hidden { display: none !important; }
@@ -78,6 +78,28 @@ button { color: inherit; }
   font-size: 11px;
 }
 .widget { white-space: pre-wrap; }
+
+.runtime-health {
+  margin: 8px var(--pad) 0;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--vscode-testing-iconFailed) 45%, var(--border));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--vscode-testing-iconFailed) 7%, var(--subtle));
+}
+.runtime-health strong { display: block; margin-bottom: 5px; }
+.runtime-health p { margin: 0 0 7px; color: var(--vscode-descriptionForeground); line-height: 1.4; }
+.runtime-health-details { margin-bottom: 9px; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 10px; overflow-wrap: anywhere; }
+.runtime-health-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.runtime-health-actions button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 10px;
+}
+.runtime-health-actions button:hover { background: var(--vscode-toolbar-hoverBackground); }
 
 .change-summary { padding: 7px var(--pad) 0; }
 .change-summary button {

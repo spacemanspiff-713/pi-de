@@ -1,6 +1,23 @@
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import MarkdownIt from "markdown-it";
+import type {
+  ContextCompletionItem,
+  HostToWebviewMessage,
+  McpStatusSnapshot,
+  PiCommandInfo,
+  WebviewToHostMessage,
+} from "../src/protocol";
+import type { ChangeSet } from "../src/changeReview";
+import { renderRuntimeHealth } from "./runtimeHealth";
+
+interface VsCodeApi {
+  postMessage(message: WebviewToHostMessage): void;
+  getState(): { draft?: string } | undefined;
+  setState(state: { draft?: string }): void;
+}
+
+declare function acquireVsCodeApi(): VsCodeApi;
 
 const markdown = new MarkdownIt({
   html: false,
@@ -29,14 +46,14 @@ markdown.renderer.rules.fence = (tokens, index) => {
 (() => {
   const vscode = acquireVsCodeApi();
   const transcript = document.getElementById("transcript");
-  const prompt = document.getElementById("prompt");
+  const prompt = document.getElementById("prompt") as HTMLTextAreaElement;
   const banner = document.getElementById("banner");
   const statusDot = document.getElementById("status-dot");
   const modelButton = document.getElementById("model");
   const thinkingButton = document.getElementById("thinking");
-  const sendButton = document.getElementById("send");
-  const stopButton = document.getElementById("stop");
-  const attachButton = document.getElementById("attach");
+  const sendButton = document.getElementById("send") as HTMLButtonElement;
+  const stopButton = document.getElementById("stop") as HTMLButtonElement;
+  const attachButton = document.getElementById("attach") as HTMLButtonElement;
   const contextChips = document.getElementById("context-chips");
   const commandMenu = document.getElementById("command-menu");
   const contextMenu = document.getElementById("context-menu");
@@ -52,19 +69,31 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const mcpTotals = document.getElementById("mcp-totals");
   const mcpList = document.getElementById("mcp-list");
   const mcpPrompts = document.getElementById("mcp-prompts");
+  const runtimeHealth = document.getElementById("runtime-health");
+  const runtimeHealthTitle = document.getElementById("runtime-health-title");
+  const runtimeHealthMessage = document.getElementById("runtime-health-message");
+  const runtimeHealthDetails = document.getElementById("runtime-health-details");
+  const runtimeTrustButton = document.getElementById("runtime-trust") as HTMLButtonElement;
 
-  let activeAssistant;
-  let activeThinking;
-  let commands = [];
+  interface ToolElements {
+    details: HTMLDetailsElement;
+    icon: HTMLElement;
+    state: HTMLElement;
+    output: HTMLElement;
+  }
+
+  let activeAssistant: HTMLElement | undefined;
+  let activeThinking: HTMLElement | undefined;
+  let commands: PiCommandInfo[] = [];
   let latestContextRequest = "";
-  let contextSearchTimer;
-  let latestChangeSet;
-  let latestMcpStatus;
-  let latestMcpPrompts = [];
-  let renderFrame;
-  const tools = new Map();
-  const messageSource = new WeakMap();
-  const pendingRenders = new Set();
+  let contextSearchTimer: ReturnType<typeof setTimeout> | undefined;
+  let latestChangeSet: ChangeSet | undefined;
+  let latestMcpStatus: McpStatusSnapshot | undefined;
+  let latestMcpPrompts: PiCommandInfo[] = [];
+  let renderFrame: number | undefined;
+  const tools = new Map<string, ToolElements>();
+  const messageSource = new WeakMap<HTMLElement, string>();
+  const pendingRenders = new Set<HTMLElement>();
   const persisted = vscode.getState() || {};
   if (typeof persisted.draft === "string") prompt.value = persisted.draft;
 
@@ -79,8 +108,11 @@ markdown.renderer.rules.fence = (tokens, index) => {
   document.getElementById("mcp").addEventListener("click", () => showPanel(mcpPanel));
   document.getElementById("mcp-reconnect-all").addEventListener("click", () => vscode.postMessage({ type: "mcpAction", action: "reconnect" }));
   document.getElementById("mcp-config").addEventListener("click", () => vscode.postMessage({ type: "openMcpConfig" }));
-  document.querySelectorAll("[data-close-panel]").forEach((button) => button.addEventListener("click", () => {
-    document.getElementById(button.dataset.closePanel)?.classList.add("hidden");
+  runtimeTrustButton.addEventListener("click", () => vscode.postMessage({ type: "manageTrust" }));
+  document.getElementById("runtime-settings").addEventListener("click", () => vscode.postMessage({ type: "openRuntimeSettings" }));
+  document.getElementById("runtime-retry").addEventListener("click", () => vscode.postMessage({ type: "retryRuntime" }));
+  document.querySelectorAll<HTMLElement>("[data-close-panel]").forEach((button) => button.addEventListener("click", () => {
+    document.getElementById(button.dataset.closePanel ?? "")?.classList.add("hidden");
   }));
   modelButton.addEventListener("click", () => vscode.postMessage({ type: "pickModel" }));
   thinkingButton.addEventListener("click", () => vscode.postMessage({ type: "pickThinking" }));
@@ -126,7 +158,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
       vscode.postMessage({ type: "openLink", href: link.getAttribute("href") || "" });
       return;
     }
-    const action = target?.closest("button[data-code-action]");
+    const action = target?.closest<HTMLButtonElement>("button[data-code-action]");
     if (!action) return;
     const code = action.closest(".code-block")?.querySelector("code")?.textContent || "";
     if (!code) return;
@@ -141,9 +173,18 @@ markdown.renderer.rules.fence = (tokens, index) => {
     }
   });
 
-  window.addEventListener("message", ({ data }) => {
+  window.addEventListener("message", ({ data }: MessageEvent<HostToWebviewMessage>) => {
     switch (data.type) {
       case "connection": setConnection(data.status, data.message); break;
+      case "runtimeHealth":
+        renderRuntimeHealth({
+          container: runtimeHealth,
+          title: runtimeHealthTitle,
+          message: runtimeHealthMessage,
+          details: runtimeHealthDetails,
+          trustButton: runtimeTrustButton,
+        }, data.health);
+        break;
       case "history": renderHistory(data.messages || []); break;
       case "commands": commands = data.commands || []; updateCommandMenu(); break;
       case "contextResults":
@@ -202,7 +243,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
         renderMcp();
         break;
       case "queue": {
-        const count = (data.steering?.length || 0) + (data.followUp?.length || 0);
+        const count = arrayLength(data.steering) + arrayLength(data.followUp);
         queue.textContent = count ? `${count} queued` : "";
         break;
       }
@@ -286,7 +327,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
 
   function removeEmptyState() { document.getElementById("empty-state")?.remove(); }
 
-  function appendMessage(role, text, thinking) {
+  function appendMessage(role, text, thinking = "") {
     removeEmptyState();
     const article = document.createElement("article");
     article.className = `message ${role}`;
@@ -465,8 +506,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
   }
 
   function renderMcp() {
-    const snapshot = latestMcpStatus || {};
-    const servers = Array.isArray(snapshot.servers) ? snapshot.servers : [];
+    const snapshot: McpStatusSnapshot = latestMcpStatus ?? { servers: [] };
+    const servers = snapshot.servers;
     mcpTotals.textContent = servers.length
       ? `${snapshot.connectedCount || 0}/${servers.length} connected · ${snapshot.totalTools || 0} tools · ${snapshot.totalResources || 0} resources`
       : "No MCP servers reported. Pi may still be initializing the adapter.";
@@ -563,7 +604,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
     }, 80);
   }
 
-  function renderContextMenu(items) {
+  function renderContextMenu(items: ContextCompletionItem[]) {
     const match = contextMatch();
     if (!match) { contextMenu.classList.add("hidden"); return; }
     contextMenu.textContent = "";
@@ -576,7 +617,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
     contextMenu.classList.toggle("hidden", !items.length);
   }
 
-  function applyContextCompletion(item) {
+  function applyContextCompletion(item: ContextCompletionItem) {
     const match = contextMatch();
     if (!match) return;
     const suffix = prompt.value.slice(match.end);
@@ -640,6 +681,10 @@ markdown.renderer.rules.fence = (tokens, index) => {
     detail.textContent = description;
     button.append(name, detail);
     return button;
+  }
+
+  function arrayLength(value: unknown): number {
+    return Array.isArray(value) ? value.length : 0;
   }
 
   function pretty(value) {

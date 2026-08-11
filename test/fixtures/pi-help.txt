@@ -1,0 +1,7 @@
+pi - AI coding assistant
+
+Options:
+  --mode <mode>                  Output mode: text (default), json, or rpc
+  --session <path|id>            Use specific session file or partial UUID
+  --approve, -a                  Trust project-local files for this run
+  --extension, -e <path>         Load an extension file

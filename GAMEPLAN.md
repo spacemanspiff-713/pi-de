@@ -30,7 +30,7 @@ The extension should eventually provide:
 - [x] Prefer stable VS Code APIs.
 - [x] Let Pi own tool and MCP execution.
 - [x] Preserve and reuse existing user/project Pi configuration.
-- [ ] Introduce a typed, modular runtime architecture before adding multiple live sessions.
+- [x] Introduce a typed, modular runtime architecture before adding multiple live sessions.
 - [ ] Enforce one-writer or worktree isolation for future concurrent sessions and agents.
 
 ---
@@ -48,6 +48,7 @@ The extension should eventually provide:
 - [x] Added VSIX packaging and local installation workflow.
 - [x] Added a dedicated Pi Activity Bar container and icon.
 - [x] Packaged and installed v0.3.0 as `pidaddylabs.pi-vscode`.
+- [x] Packaged, Extension Host-tested, and locally installed the Phase 0 hardening release v0.3.1.
 
 ## Pi runtime and RPC integration
 
@@ -168,12 +169,12 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.3.0`
+- Version: `0.3.1`
 - Extension ID: `pidaddylabs.pi-vscode`
-- Main implementation commit: `f165e3a`
-- Baseline implementation commit: `ebeceb3`
-- Tests at v0.3.0: 13 passing
-- Current UI model: one active RPC sidecar in a retained Activity Bar webview
+- Feature baseline commit: `f165e3a`
+- Original implementation commit: `ebeceb3`
+- Tests at v0.3.1: 17 Vitest tests plus 2 Extension Host integration checks
+- Current UI model: one capability-probed RPC runtime in a retained Activity Bar webview
 
 ---
 
@@ -181,34 +182,34 @@ The extension should eventually provide:
 
 Everything below is not implemented unless its checkbox is later marked complete.
 
-## Phase 0 — Architecture hardening
+## Phase 0 — Architecture hardening — completed in v0.3.1
 
 Goal: make the current implementation modular enough to support multiple runtimes and richer control panels without turning the provider/webview into monoliths.
 
-- [ ] Define a shared typed host/webview protocol.
-- [ ] Convert webview source to TypeScript modules.
-- [ ] Split runtime lifecycle out of `PiViewProvider`.
-- [ ] Split session actions and indexing into a session service/controller.
-- [ ] Split change review into a workspace-scoped service/controller.
-- [ ] Split MCP status/actions into a controller.
-- [ ] Split extension UI request handling into a bridge router.
-- [ ] Add a central runtime event model.
-- [ ] Add Pi capability detection instead of relying on version assumptions.
-- [ ] Improve Pi binary auto-discovery.
-- [ ] Add a runtime-health/onboarding panel.
-- [ ] Declare unsupported untrusted and virtual workspaces in the manifest.
-- [ ] Disable agent startup until Workspace Trust is granted.
-- [ ] Add VS Code Extension Host integration tests.
-- [ ] Add recorded RPC contract fixtures.
-- [ ] Add formal third-party attribution documentation.
+- [x] Define a shared typed host/webview protocol.
+- [x] Convert webview source to TypeScript modules.
+- [x] Split runtime lifecycle out of `PiViewProvider`.
+- [x] Split session actions and indexing into a session service/controller.
+- [x] Split change review into a workspace-scoped service/controller.
+- [x] Split MCP status/actions into a controller.
+- [x] Split extension UI request handling into a bridge router.
+- [x] Add a central runtime event model.
+- [x] Add Pi capability detection instead of relying on version assumptions.
+- [x] Improve Pi binary auto-discovery.
+- [x] Add a runtime-health/onboarding panel.
+- [x] Declare unsupported untrusted and virtual workspaces in the manifest.
+- [x] Disable agent startup until Workspace Trust is granted.
+- [x] Add VS Code Extension Host integration tests.
+- [x] Add recorded RPC contract fixtures.
+- [x] Add formal third-party attribution documentation.
 
 ### Exit criteria
 
-- [ ] No visible feature regressions.
-- [ ] Existing tests pass.
-- [ ] A real Pi RPC smoke test passes.
-- [ ] Trust/runtime failures have actionable UI.
-- [ ] New subsystems can be tested without constructing the entire view provider.
+- [x] No visible feature regressions in the automated DOM, Git, session, RPC, and Extension Host coverage.
+- [x] Existing tests pass, with the suite expanded from 13 to 17 Vitest tests plus 2 Extension Host checks.
+- [x] A real Pi 0.84.1 RPC smoke test passes with capability discovery and MCP bridge status.
+- [x] Trust/runtime failures have actionable onboarding UI.
+- [x] New runtime, protocol, session, change, MCP, and extension-UI subsystems can be exercised without constructing the entire view provider.
 
 ## Phase 1 — v0.4 low-hanging fruit
 

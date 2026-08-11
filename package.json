@@ -2,10 +2,18 @@
   "name": "pi-vscode",
   "displayName": "Pi Coding Agent",
   "description": "A dedicated VS Code interface for the Pi coding agent.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "pidaddylabs",
   "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spacemanspiff-713/pi-de.git"
+  },
+  "homepage": "https://github.com/spacemanspiff-713/pi-de#readme",
+  "bugs": {
+    "url": "https://github.com/spacemanspiff-713/pi-de/issues"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
@@ -24,6 +32,16 @@
   "extensionKind": [
     "workspace"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Pi can execute commands and load project-local resources, so a trusted workspace is required."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Pi requires a filesystem-backed workspace and local process execution."
+    }
+  },
   "main": "./dist/src/extension.js",
   "activationEvents": [],
   "contributes": {
@@ -154,11 +172,14 @@
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "compile": "tsc -p tsconfig.json && npm run build:webview",
-    "build:webview": "esbuild webview/main.js --bundle --platform=browser --format=iife --target=chrome120 --outfile=media/main.js",
+    "compile": "tsc -p tsconfig.json && npm run typecheck:webview && npm run build:webview",
+    "typecheck:webview": "tsc -p tsconfig.webview.json",
+    "build:webview": "esbuild webview/main.ts --bundle --platform=browser --format=iife --target=chrome120 --outfile=media/main.js",
     "watch": "tsc -w -p tsconfig.json",
     "test": "vitest run",
+    "test:vscode": "node dist/test/vscode/runTest.js",
     "check": "npm run compile && npm test",
+    "check:all": "npm run check && npm run test:vscode",
     "package": "npm run check && vsce package --no-dependencies --allow-missing-repository"
   },
   "devDependencies": {
@@ -166,6 +187,7 @@
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.15.0",
     "@types/vscode": "^1.100.0",
+    "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.6.0",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",

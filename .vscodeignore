@@ -7,5 +7,5 @@ test/**
 webview/**
 dist/test/**
 node_modules/**
-tsconfig.json
+tsconfig*.json
 **/*.map
