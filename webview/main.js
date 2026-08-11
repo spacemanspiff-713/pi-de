@@ -1,0 +1,501 @@
+import DOMPurify from "dompurify";
+import hljs from "highlight.js/lib/common";
+import MarkdownIt from "markdown-it";
+
+const markdown = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: true,
+  highlight(code, language) {
+    if (language && hljs.getLanguage(language)) {
+      try { return hljs.highlight(code, { language, ignoreIllegals: true }).value; }
+      catch { /* Fall back to escaped code. */ }
+    }
+    return markdown.utils.escapeHtml(code);
+  },
+});
+
+markdown.renderer.rules.fence = (tokens, index) => {
+  const token = tokens[index];
+  const language = token.info.trim().split(/\s+/)[0] || "code";
+  const highlighted = markdown.options.highlight(token.content, language, "");
+  const safeLanguage = markdown.utils.escapeHtml(language);
+  return `<div class="code-block">
+    <div class="code-toolbar"><span>${safeLanguage}</span><button data-code-action="copy">Copy</button><button data-code-action="insert">Insert</button></div>
+    <pre><code class="hljs language-${safeLanguage}">${highlighted}</code></pre>
+  </div>`;
+};
+
+(() => {
+  const vscode = acquireVsCodeApi();
+  const transcript = document.getElementById("transcript");
+  const prompt = document.getElementById("prompt");
+  const banner = document.getElementById("banner");
+  const statusDot = document.getElementById("status-dot");
+  const modelButton = document.getElementById("model");
+  const thinkingButton = document.getElementById("thinking");
+  const sendButton = document.getElementById("send");
+  const stopButton = document.getElementById("stop");
+  const attachButton = document.getElementById("attach");
+  const contextChips = document.getElementById("context-chips");
+  const commandMenu = document.getElementById("command-menu");
+  const contextMenu = document.getElementById("context-menu");
+  const queue = document.getElementById("queue");
+  const widget = document.getElementById("widget");
+  const jump = document.getElementById("jump");
+
+  let activeAssistant;
+  let activeThinking;
+  let commands = [];
+  let latestContextRequest = "";
+  let contextSearchTimer;
+  let renderFrame;
+  const tools = new Map();
+  const messageSource = new WeakMap();
+  const pendingRenders = new Set();
+  const persisted = vscode.getState() || {};
+  if (typeof persisted.draft === "string") prompt.value = persisted.draft;
+
+  document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
+  document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
+  document.getElementById("restart").addEventListener("click", () => vscode.postMessage({ type: "restart" }));
+  document.getElementById("output").addEventListener("click", () => vscode.postMessage({ type: "showOutput" }));
+  modelButton.addEventListener("click", () => vscode.postMessage({ type: "pickModel" }));
+  thinkingButton.addEventListener("click", () => vscode.postMessage({ type: "pickThinking" }));
+  stopButton.addEventListener("click", () => vscode.postMessage({ type: "abort" }));
+  sendButton.addEventListener("click", send);
+  attachButton.addEventListener("click", () => insertAtCursor("@"));
+  jump.querySelector("button").addEventListener("click", () => scrollToBottom(true));
+
+  prompt.addEventListener("input", () => {
+    vscode.setState({ ...persisted, draft: prompt.value });
+    updateCommandMenu();
+    updateContextSearch();
+    updateContextChips();
+  });
+  prompt.addEventListener("click", updateContextSearch);
+  prompt.addEventListener("keyup", updateContextSearch);
+  prompt.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      send();
+      return;
+    }
+    if (event.key === "Tab") {
+      const first = !contextMenu.classList.contains("hidden")
+        ? contextMenu.querySelector("button")
+        : !commandMenu.classList.contains("hidden") ? commandMenu.querySelector("button") : undefined;
+      if (first) {
+        event.preventDefault();
+        first.click();
+      }
+    }
+    if (event.key === "Escape") {
+      commandMenu.classList.add("hidden");
+      contextMenu.classList.add("hidden");
+    }
+  });
+  transcript.addEventListener("scroll", () => jump.classList.toggle("hidden", isNearBottom()));
+  transcript.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : undefined;
+    const link = target?.closest("a");
+    if (link) {
+      event.preventDefault();
+      vscode.postMessage({ type: "openLink", href: link.getAttribute("href") || "" });
+      return;
+    }
+    const action = target?.closest("button[data-code-action]");
+    if (!action) return;
+    const code = action.closest(".code-block")?.querySelector("code")?.textContent || "";
+    if (!code) return;
+    if (action.dataset.codeAction === "copy") {
+      vscode.postMessage({ type: "copyText", text: code });
+      action.textContent = "Copied";
+      setTimeout(() => { action.textContent = "Copy"; }, 1_200);
+    } else if (action.dataset.codeAction === "insert") {
+      vscode.postMessage({ type: "insertText", text: code });
+      action.textContent = "Inserted";
+      setTimeout(() => { action.textContent = "Insert"; }, 1_200);
+    }
+  });
+
+  window.addEventListener("message", ({ data }) => {
+    switch (data.type) {
+      case "connection": setConnection(data.status, data.message); break;
+      case "history": renderHistory(data.messages || []); break;
+      case "commands": commands = data.commands || []; updateCommandMenu(); break;
+      case "contextResults":
+        if (data.requestId === latestContextRequest) renderContextMenu(data.items || []);
+        break;
+      case "state": updateState(data); break;
+      case "clear":
+        transcript.textContent = "";
+        tools.clear();
+        activeAssistant = undefined;
+        activeThinking = undefined;
+        emptyState();
+        break;
+      case "userPrompt": removeEmptyState(); appendMessage("user", data.text); break;
+      case "textDelta": appendAssistantDelta(data.delta || ""); break;
+      case "thinkingDelta": ensureThinking(); activeThinking.append(document.createTextNode(data.delta || "")); scrollToBottom(); break;
+      case "messageEnd":
+        if (data.role === "assistant") { activeAssistant = undefined; activeThinking = undefined; }
+        break;
+      case "toolStart": appendTool(data); break;
+      case "toolUpdate": updateTool(data.id, data.result, false, false); break;
+      case "toolEnd": updateTool(data.id, data.result, true, data.isError); break;
+      case "busy": setBusy(Boolean(data.value)); break;
+      case "notice": appendNotice(data.message, "notice"); break;
+      case "error": appendNotice(data.message, "error"); break;
+      case "extensionStatus": if (data.text) banner.textContent = String(data.text); break;
+      case "widget":
+        widget.textContent = Array.isArray(data.lines) ? data.lines.join("\n") : "";
+        widget.classList.toggle("hidden", !widget.textContent);
+        break;
+      case "prefill":
+        prompt.value = String(data.text || "");
+        updateContextChips();
+        prompt.focus();
+        break;
+      case "queue": {
+        const count = (data.steering?.length || 0) + (data.followUp?.length || 0);
+        queue.textContent = count ? `${count} queued` : "";
+        break;
+      }
+    }
+  });
+
+  function send() {
+    const text = prompt.value.trim();
+    if (!text) return;
+    vscode.postMessage({ type: "prompt", text });
+    prompt.value = "";
+    vscode.setState({ ...persisted, draft: "" });
+    commandMenu.classList.add("hidden");
+    contextMenu.classList.add("hidden");
+    updateContextChips();
+    prompt.focus();
+  }
+
+  function insertAtCursor(text) {
+    const start = prompt.selectionStart;
+    const end = prompt.selectionEnd;
+    prompt.setRangeText(text, start, end, "end");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    prompt.focus();
+  }
+
+  function setConnection(status, message) {
+    statusDot.className = `status-dot ${status || ""}`;
+    banner.textContent = message || "";
+    banner.classList.toggle("hidden", status === "ready");
+  }
+
+  function updateState(state) {
+    const model = state.model || {};
+    modelButton.textContent = model.name || model.id || "Select model";
+    modelButton.title = model.provider && model.id ? `${model.provider}/${model.id}` : "Select Pi model";
+    thinkingButton.textContent = `thinking: ${state.thinkingLevel || "off"}`;
+    setBusy(Boolean(state.isStreaming));
+  }
+
+  function setBusy(value) {
+    stopButton.classList.toggle("hidden", !value);
+    sendButton.textContent = value ? "Queue" : "Send";
+    document.body.classList.toggle("busy", value);
+    statusDot.classList.toggle("working", value);
+  }
+
+  function renderHistory(messages) {
+    transcript.textContent = "";
+    tools.clear();
+    activeAssistant = undefined;
+    activeThinking = undefined;
+    if (!messages.length) { emptyState(); return; }
+    for (const message of messages) {
+      if (message.role === "toolResult") {
+        const id = `history-${tools.size}`;
+        appendTool({ id, name: message.toolName || "tool", args: undefined });
+        updateTool(id, { content: [{ type: "text", text: message.text || "Tool completed" }] }, true, message.isError);
+      } else {
+        appendMessage(message.role, message.text || "", message.thinking);
+      }
+    }
+    scrollToBottom(true);
+  }
+
+  function emptyState() {
+    if (document.getElementById("empty-state")) return;
+    const element = document.createElement("section");
+    element.id = "empty-state";
+    element.className = "empty-state";
+    const mark = document.createElement("div");
+    mark.className = "pi-mark";
+    mark.textContent = "π";
+    const title = document.createElement("h2");
+    title.textContent = "Build with Pi";
+    const copy = document.createElement("p");
+    copy.textContent = "Your agent, tools, skills, MCP servers, and memory—inside VS Code.";
+    element.append(mark, title, copy);
+    transcript.append(element);
+  }
+
+  function removeEmptyState() { document.getElementById("empty-state")?.remove(); }
+
+  function appendMessage(role, text, thinking) {
+    removeEmptyState();
+    const article = document.createElement("article");
+    article.className = `message ${role}`;
+    const label = document.createElement("div");
+    label.className = "message-label";
+    label.textContent = role === "user" ? "You" : role === "assistant" ? "Pi" : role;
+    const body = document.createElement("div");
+    body.className = "message-body markdown-body";
+    messageSource.set(body, text || "");
+    renderMarkdown(body, text || "");
+    article.append(label);
+    if (thinking) article.append(createThinking(thinking));
+    article.append(body);
+    transcript.append(article);
+    scrollToBottom();
+    return body;
+  }
+
+  function ensureAssistant() {
+    if (!activeAssistant) activeAssistant = appendMessage("assistant", "");
+  }
+
+  function appendAssistantDelta(delta) {
+    ensureAssistant();
+    messageSource.set(activeAssistant, `${messageSource.get(activeAssistant) || ""}${delta}`);
+    queueMarkdownRender(activeAssistant);
+    scrollToBottom();
+  }
+
+  function queueMarkdownRender(element) {
+    pendingRenders.add(element);
+    if (renderFrame) return;
+    renderFrame = requestAnimationFrame(() => {
+      for (const pending of pendingRenders) renderMarkdown(pending, messageSource.get(pending) || "");
+      pendingRenders.clear();
+      renderFrame = undefined;
+    });
+  }
+
+  function renderMarkdown(element, source) {
+    const rendered = markdown.render(source);
+    element.innerHTML = DOMPurify.sanitize(rendered, {
+      ADD_ATTR: ["data-code-action", "class"],
+      FORBID_TAGS: ["style", "iframe", "object", "embed"],
+    });
+  }
+
+  function ensureThinking() {
+    if (activeThinking) return;
+    removeEmptyState();
+    let article = transcript.lastElementChild;
+    if (!article || !article.classList.contains("assistant")) {
+      activeAssistant = appendMessage("assistant", "");
+      article = transcript.lastElementChild;
+    }
+    const details = createThinking("");
+    article.insertBefore(details, article.querySelector(".message-body"));
+    activeThinking = details.querySelector("pre");
+  }
+
+  function createThinking(text) {
+    const details = document.createElement("details");
+    details.className = "thinking";
+    const summary = document.createElement("summary");
+    summary.textContent = "Reasoning";
+    const content = document.createElement("pre");
+    content.textContent = text;
+    details.append(summary, content);
+    return details;
+  }
+
+  function appendTool(data) {
+    removeEmptyState();
+    const details = document.createElement("details");
+    details.className = "tool";
+    const summary = document.createElement("summary");
+    const icon = document.createElement("span");
+    icon.className = "tool-icon running";
+    icon.textContent = "◇";
+    const name = document.createElement("span");
+    name.className = "tool-name";
+    name.textContent = String(data.name || "tool");
+    const state = document.createElement("span");
+    state.className = "tool-state";
+    state.textContent = "running";
+    summary.append(icon, name, state);
+    const args = document.createElement("pre");
+    args.className = "tool-args";
+    args.textContent = data.args === undefined ? "" : pretty(data.args);
+    const output = document.createElement("pre");
+    output.className = "tool-output";
+    details.append(summary, args, output);
+    transcript.append(details);
+    tools.set(String(data.id), { details, icon, state, output });
+    scrollToBottom();
+  }
+
+  function updateTool(id, result, done, isError) {
+    const tool = tools.get(String(id));
+    if (!tool) return;
+    const text = resultText(result);
+    if (text) tool.output.textContent = text;
+    if (done) {
+      tool.icon.textContent = isError ? "×" : "✓";
+      tool.icon.className = `tool-icon ${isError ? "failed" : "done"}`;
+      tool.state.textContent = isError ? "failed" : "done";
+      if (isError) tool.details.open = true;
+    }
+    scrollToBottom();
+  }
+
+  function resultText(result) {
+    if (!result) return "";
+    const content = Array.isArray(result.content) ? result.content : [];
+    const text = content.filter((item) => item && item.type === "text").map((item) => item.text).join("\n");
+    return text || (typeof result === "string" ? result : "");
+  }
+
+  function appendNotice(message, kind) {
+    removeEmptyState();
+    const element = document.createElement("div");
+    element.className = `inline-notice ${kind}`;
+    element.textContent = String(message || "");
+    transcript.append(element);
+    scrollToBottom();
+  }
+
+  function updateCommandMenu() {
+    const before = prompt.value.slice(0, prompt.selectionStart);
+    const match = before.match(/^\/([^\s]*)$/);
+    if (!match) { commandMenu.classList.add("hidden"); return; }
+    contextMenu.classList.add("hidden");
+    const query = match[1].toLowerCase();
+    const matches = commands.filter((command) => command.name.toLowerCase().includes(query)).slice(0, 8);
+    commandMenu.textContent = "";
+    for (const command of matches) {
+      const button = completionButton(`/${command.name}`, command.description || command.source || "Pi command");
+      button.addEventListener("click", () => {
+        prompt.value = `/${command.name} `;
+        commandMenu.classList.add("hidden");
+        prompt.focus();
+      });
+      commandMenu.append(button);
+    }
+    commandMenu.classList.toggle("hidden", !matches.length);
+  }
+
+  function updateContextSearch() {
+    const match = contextMatch();
+    if (!match) { contextMenu.classList.add("hidden"); return; }
+    commandMenu.classList.add("hidden");
+    clearTimeout(contextSearchTimer);
+    contextSearchTimer = setTimeout(() => {
+      latestContextRequest = `${Date.now()}-${Math.random()}`;
+      vscode.postMessage({ type: "contextSearch", query: match.query, requestId: latestContextRequest });
+    }, 80);
+  }
+
+  function renderContextMenu(items) {
+    const match = contextMatch();
+    if (!match) { contextMenu.classList.add("hidden"); return; }
+    contextMenu.textContent = "";
+    for (const item of items) {
+      const icon = item.kind === "file" ? "▧" : "@";
+      const button = completionButton(`${icon} ${item.label}`, item.description || "Context");
+      button.addEventListener("click", () => applyContextCompletion(item));
+      contextMenu.append(button);
+    }
+    contextMenu.classList.toggle("hidden", !items.length);
+  }
+
+  function applyContextCompletion(item) {
+    const match = contextMatch();
+    if (!match) return;
+    const suffix = prompt.value.slice(match.end);
+    prompt.value = `${prompt.value.slice(0, match.start)}${item.insertText} ${suffix}`;
+    const cursor = match.start + item.insertText.length + 1;
+    prompt.setSelectionRange(cursor, cursor);
+    contextMenu.classList.add("hidden");
+    prompt.dispatchEvent(new Event("input", { bubbles: true }));
+    prompt.focus();
+  }
+
+  function contextMatch() {
+    const end = prompt.selectionStart;
+    const before = prompt.value.slice(0, end);
+    const match = before.match(/(?:^|\s)@([^\s@]*)$/);
+    if (!match) return undefined;
+    const start = before.lastIndexOf("@");
+    return { start, end, query: match[1] || "" };
+  }
+
+  function updateContextChips() {
+    const mentions = mentionTokens(prompt.value);
+    contextChips.textContent = "";
+    for (const mention of mentions) {
+      const chip = document.createElement("span");
+      chip.className = "context-chip";
+      chip.append(document.createTextNode(mention.label));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.setAttribute("aria-label", `Remove ${mention.label}`);
+      remove.textContent = "×";
+      remove.addEventListener("click", () => {
+        prompt.value = `${prompt.value.slice(0, mention.start)}${prompt.value.slice(mention.end)}`.replace(/ {2,}/g, " ");
+        prompt.dispatchEvent(new Event("input", { bubbles: true }));
+        prompt.focus();
+      });
+      chip.append(remove);
+      contextChips.append(chip);
+    }
+    contextChips.classList.toggle("hidden", !mentions.length);
+  }
+
+  function mentionTokens(value) {
+    const matches = [];
+    const pattern = /@(?:"([^"]+)"|([^\s]+))/g;
+    for (const match of value.matchAll(pattern)) {
+      matches.push({
+        label: `@${match[1] || match[2]}`,
+        start: match.index,
+        end: match.index + match[0].length,
+      });
+    }
+    return matches;
+  }
+
+  function completionButton(label, description) {
+    const button = document.createElement("button");
+    const name = document.createElement("strong");
+    name.textContent = label;
+    const detail = document.createElement("span");
+    detail.textContent = description;
+    button.append(name, detail);
+    return button;
+  }
+
+  function pretty(value) {
+    try { return JSON.stringify(value, null, 2); }
+    catch { return String(value); }
+  }
+
+  function isNearBottom() { return transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 100; }
+
+  function scrollToBottom(force = false) {
+    if (force || isNearBottom()) {
+      requestAnimationFrame(() => transcript.scrollTo({ top: transcript.scrollHeight, behavior: force ? "auto" : "smooth" }));
+      jump.classList.add("hidden");
+    } else {
+      jump.classList.remove("hidden");
+    }
+  }
+
+  updateContextChips();
+  vscode.postMessage({ type: "ready" });
+})();

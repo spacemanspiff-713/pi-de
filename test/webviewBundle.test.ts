@@ -1,0 +1,62 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { JSDOM } from "jsdom";
+
+const shell = `<!doctype html><html><body>
+  <span id="status-dot"></span><button id="model"></button><button id="thinking"></button>
+  <div id="banner"></div><div id="widget"></div><main id="transcript"></main>
+  <div id="jump" class="hidden"><button>Jump</button></div>
+  <div id="context-chips"></div><textarea id="prompt"></textarea>
+  <button id="sessions"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
+  <button id="attach"></button><button id="stop"></button><button id="send"></button>
+  <span id="queue"></span><div id="command-menu"></div><div id="context-menu"></div>
+</body></html>`;
+
+describe("bundled Pi webview", () => {
+  it("renders sanitized rich Markdown and code actions", async () => {
+    const dom = new JSDOM(shell, {
+      runScripts: "outside-only",
+      pretendToBeVisual: true,
+      url: "https://vscode-webview.test/",
+    });
+    const posted: Array<Record<string, unknown>> = [];
+    const window = dom.window as any;
+    window.acquireVsCodeApi = () => ({
+      postMessage: (message: Record<string, unknown>) => posted.push(message),
+      getState: () => ({}),
+      setState: () => undefined,
+    });
+    window.HTMLElement.prototype.scrollTo = () => undefined;
+
+    const bundle = readFileSync(join(process.cwd(), "media", "main.js"), "utf8");
+    window.eval(bundle);
+    expect(posted.some((message) => message.type === "ready")).toBe(true);
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: {
+        type: "history",
+        messages: [{
+          role: "assistant",
+          text: "## Result\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```js\nconst answer = 42;\n```\n\n[Docs](https://example.com)",
+        }],
+      },
+    }));
+
+    const document = window.document;
+    expect(document.querySelector("h2")?.textContent).toBe("Result");
+    expect(document.querySelectorAll("table td")).toHaveLength(2);
+    expect(document.querySelector("code")?.textContent).toContain("const answer = 42;");
+    expect(document.querySelector("code .hljs-keyword")?.textContent).toBe("const");
+    expect(document.querySelectorAll("button[data-code-action]")).toHaveLength(2);
+
+    document.querySelector('button[data-code-action="copy"]')?.click();
+    expect(posted.some((message) => message.type === "copyText" && String(message.text).includes("answer = 42"))).toBe(true);
+
+    document.querySelector("a")?.click();
+    expect(posted.some((message) => message.type === "openLink" && message.href === "https://example.com")).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    dom.window.close();
+  });
+});

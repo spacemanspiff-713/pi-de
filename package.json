@@ -1,0 +1,164 @@
+{
+  "name": "pi-vscode",
+  "displayName": "Pi Coding Agent",
+  "description": "A dedicated VS Code interface for the Pi coding agent.",
+  "version": "0.2.0",
+  "publisher": "pidaddylabs",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "pi",
+    "agent",
+    "chat",
+    "coding",
+    "mcp"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/src/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pi",
+          "title": "Pi",
+          "icon": "assets/pi.svg"
+        }
+      ]
+    },
+    "views": {
+      "pi": [
+        {
+          "type": "webview",
+          "id": "pi.chatView",
+          "name": "Pi Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "pi.openChat",
+        "category": "Pi",
+        "title": "Open Chat"
+      },
+      {
+        "command": "pi.newSession",
+        "category": "Pi",
+        "title": "New Session",
+        "icon": "$(add)"
+      },
+      {
+        "command": "pi.openSession",
+        "category": "Pi",
+        "title": "Open Session",
+        "icon": "$(history)"
+      },
+      {
+        "command": "pi.abort",
+        "category": "Pi",
+        "title": "Stop Agent",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "pi.restart",
+        "category": "Pi",
+        "title": "Restart Agent",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pi.askSelection",
+        "category": "Pi",
+        "title": "Ask Pi About Selection"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "pi.newSession",
+          "group": "navigation@1",
+          "when": "view == pi.chatView"
+        },
+        {
+          "command": "pi.openSession",
+          "group": "navigation@2",
+          "when": "view == pi.chatView"
+        },
+        {
+          "command": "pi.restart",
+          "group": "navigation@3",
+          "when": "view == pi.chatView"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "pi.askSelection",
+          "group": "navigation@50",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Pi Coding Agent",
+      "properties": {
+        "pi.executablePath": {
+          "type": "string",
+          "default": "pi",
+          "description": "Path to the Pi executable used for RPC mode."
+        },
+        "pi.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional arguments passed to Pi before RPC mode starts."
+        },
+        "pi.approveTrustedWorkspace": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pass --approve to Pi after VS Code Workspace Trust has been granted, enabling trusted project-local Pi resources for this run."
+        },
+        "pi.showThinking": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show streamed reasoning in a collapsible section."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "compile": "tsc -p tsconfig.json && npm run build:webview",
+    "build:webview": "esbuild webview/main.js --bundle --platform=browser --format=iife --target=chrome120 --outfile=media/main.js",
+    "watch": "tsc -w -p tsconfig.json",
+    "test": "vitest run",
+    "check": "npm run compile && npm test",
+    "package": "npm run check && vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^30.0.0",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22.15.0",
+    "@types/vscode": "^1.100.0",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.13",
+    "highlight.js": "^11.11.2",
+    "markdown-it": "^15.0.0"
+  }
+}
