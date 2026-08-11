@@ -1,0 +1,432 @@
+# Pi Coding Agent for VS Code — Gameplan
+
+This document is the project ledger: what has shipped, what is currently true, and what we intend to build next.
+
+## Status legend
+
+- [x] Implemented and validated
+- [ ] Planned; not implemented
+- [~] Intentionally deferred or under evaluation
+
+## Product vision
+
+Build a dedicated, independent Pi workspace inside VS Code while keeping the real Pi runtime in charge.
+
+The extension should eventually provide:
+
+- an excellent daily-driver Pi conversation interface;
+- native review and recovery for agent changes;
+- a searchable workspace over Pi sessions;
+- runtime/package/extension/MCP controls;
+- persistent multi-session work;
+- safe, observable multi-agent orchestration;
+- strong integration with VS Code without replacing Pi's agent loop.
+
+## Architectural decisions
+
+- [x] Use `pi --mode rpc` rather than recreating Pi with a separate agent implementation.
+- [x] Keep Pi's settings, credentials, packages, extensions, skills, prompt templates, MCP configuration, and JSONL sessions authoritative.
+- [x] Use a dedicated Pi Activity Bar interface independent of Copilot.
+- [x] Prefer stable VS Code APIs.
+- [x] Let Pi own tool and MCP execution.
+- [x] Preserve and reuse existing user/project Pi configuration.
+- [ ] Introduce a typed, modular runtime architecture before adding multiple live sessions.
+- [ ] Enforce one-writer or worktree isolation for future concurrent sessions and agents.
+
+---
+
+# Completed work
+
+## Repository and extension foundation
+
+- [x] Initialized a standalone Git repository.
+- [x] Added an MIT license under PiDaddy Labs.
+- [x] Added TypeScript extension-host compilation.
+- [x] Added an esbuild webview bundle.
+- [x] Added Vitest and JSDOM testing.
+- [x] Added VS Code development launch/tasks configuration.
+- [x] Added VSIX packaging and local installation workflow.
+- [x] Added a dedicated Pi Activity Bar container and icon.
+- [x] Packaged and installed v0.3.0 as `pidaddylabs.pi-vscode`.
+
+## Pi runtime and RPC integration
+
+- [x] Launch the real Pi runtime with `pi --mode rpc`.
+- [x] Use one JSON object per line for RPC transport.
+- [x] Correlate RPC requests and responses with unique IDs.
+- [x] Stream Pi events into VS Code.
+- [x] Stop and restart the Pi sidecar.
+- [x] Abort active Pi work.
+- [x] Show startup, ready, failure, and reconnect state.
+- [x] Persist the current Pi session per workspace.
+- [x] Pass trusted-project approval only after VS Code Workspace Trust is granted.
+- [x] Respect configurable Pi executable and extra arguments.
+- [x] Load the packaged Pi bridge extension alongside the user's normal Pi extensions.
+- [x] Preserve Pi's existing models, credentials, skills, extensions, prompts, sessions, and MCP configuration.
+
+## Conversation interface
+
+- [x] Stream assistant text incrementally.
+- [x] Stream reasoning into collapsible thinking blocks.
+- [x] Render assistant output as sanitized Markdown.
+- [x] Render headings, lists, tables, blockquotes, and links.
+- [x] Syntax-highlight fenced code blocks.
+- [x] Add Copy and Insert actions to code blocks.
+- [x] Render expandable tool invocation/result cards.
+- [x] Render tool state and duration.
+- [x] Auto-collapse completed tool output.
+- [x] Queue follow-up prompts while Pi is working.
+- [x] Cancel active work.
+- [x] Keep the composer responsive during streaming.
+- [x] Add jump-to-latest behavior without stealing scroll position.
+- [x] Add model and thinking-level selectors.
+- [x] Discover slash commands dynamically from Pi.
+- [x] Complete slash commands in the composer.
+- [x] Support MCP prompt commands discovered through Pi.
+- [x] Handle Pi extension notifications, confirmation, selection, input, and editor requests through VS Code UI.
+- [x] Fix stale “Starting Pi…” state after reconnect.
+
+## Context attachments
+
+- [x] Add searchable `@` completion.
+- [x] Attach the active editor selection.
+- [x] Attach the current file.
+- [x] Attach open files.
+- [x] Attach VS Code diagnostics/problems.
+- [x] Attach Git diff context.
+- [x] Attach terminal metadata.
+- [x] Attach workspace roots.
+- [x] Search and attach workspace files.
+- [x] Display removable attachment chips.
+- [x] Bound attached context by size and line count.
+- [x] Add “Ask Pi About Selection” to the editor context menu.
+
+## Session library
+
+- [x] Discover Pi JSONL sessions for the current workspace.
+- [x] Respect Pi's configured/default session directories.
+- [x] Parse session ID, name, workspace, creation/update times, and preview.
+- [x] Parse user/assistant/tool-call counts.
+- [x] Parse model, token usage, and cost metadata.
+- [x] Search session user-message content.
+- [x] Identify the current session.
+- [x] Resume sessions through Pi RPC.
+- [x] Rename active sessions.
+- [x] Rename inactive sessions through a short-lived Pi RPC helper.
+- [x] Fork from a selected historical user message.
+- [x] Clone sessions.
+- [x] Archive sessions reversibly.
+- [x] Restore archived sessions.
+- [x] Delete sessions using operating-system trash when available.
+- [x] Guard against archiving/deleting the active session.
+
+## Native Git change review
+
+- [x] Capture a checkpoint before each non-slash Pi task.
+- [x] Use a temporary Git index so the user's real index is untouched.
+- [x] Preserve pre-existing tracked, staged, dirty, and untracked work.
+- [x] Store checkpoint commits under `refs/pi-vscode/checkpoints/`.
+- [x] Prune old checkpoint refs.
+- [x] Calculate changed files after Pi settles.
+- [x] Track added, modified, deleted, and renamed paths.
+- [x] Calculate additions and deletions.
+- [x] Open native VS Code before/after diffs.
+- [x] Mark individual files accepted/reviewed.
+- [x] Revert individual files to their exact pre-task state.
+- [x] Review all files from the latest task.
+- [x] Persist the latest change set across extension reloads.
+- [x] Keep accept semantics separate from Git staging/committing.
+
+## MCP control center
+
+- [x] Reuse the installed `pi-mcp-adapter` rather than implementing another MCP client.
+- [x] Package a small Pi bridge that forwards adapter status to VS Code.
+- [x] Display server status.
+- [x] Display tool and resource counts.
+- [x] Reconnect one server.
+- [x] Reconnect all servers.
+- [x] Enable and disable servers through adapter commands.
+- [x] Restart Pi after persisted MCP enable/disable operations.
+- [x] Hand OAuth authentication through Pi's MCP commands/UI.
+- [x] Surface MCP prompts in the control center.
+- [x] Preserve Pi extension approvals and prompts.
+- [x] Open existing MCP configuration files.
+- [x] Create a project `.mcp.json` when no MCP configuration exists.
+- [x] Validate the packaged bridge against configured MCP servers in a real Pi runtime.
+
+## Tests and validation
+
+- [x] Test chunked JSONL decoding.
+- [x] Test context-mention parsing.
+- [x] Test dirty-worktree checkpoint/revert behavior in temporary Git repositories.
+- [x] Test session parsing and archive/restore.
+- [x] Test webview Markdown, links, change review, and MCP rendering in JSDOM.
+- [x] Run TypeScript compilation and webview bundling in the standard check.
+- [x] Validate real Pi streaming and tool execution.
+- [x] Validate VSIX packaging and local installation.
+- [x] Validate discovery of a real extension-created Pi session.
+
+### Current release snapshot
+
+- Version: `0.3.0`
+- Extension ID: `pidaddylabs.pi-vscode`
+- Main implementation commit: `f165e3a`
+- Baseline implementation commit: `ebeceb3`
+- Tests at v0.3.0: 13 passing
+- Current UI model: one active RPC sidecar in a retained Activity Bar webview
+
+---
+
+# Planned improvements
+
+Everything below is not implemented unless its checkbox is later marked complete.
+
+## Phase 0 — Architecture hardening
+
+Goal: make the current implementation modular enough to support multiple runtimes and richer control panels without turning the provider/webview into monoliths.
+
+- [ ] Define a shared typed host/webview protocol.
+- [ ] Convert webview source to TypeScript modules.
+- [ ] Split runtime lifecycle out of `PiViewProvider`.
+- [ ] Split session actions and indexing into a session service/controller.
+- [ ] Split change review into a workspace-scoped service/controller.
+- [ ] Split MCP status/actions into a controller.
+- [ ] Split extension UI request handling into a bridge router.
+- [ ] Add a central runtime event model.
+- [ ] Add Pi capability detection instead of relying on version assumptions.
+- [ ] Improve Pi binary auto-discovery.
+- [ ] Add a runtime-health/onboarding panel.
+- [ ] Declare unsupported untrusted and virtual workspaces in the manifest.
+- [ ] Disable agent startup until Workspace Trust is granted.
+- [ ] Add VS Code Extension Host integration tests.
+- [ ] Add recorded RPC contract fixtures.
+- [ ] Add formal third-party attribution documentation.
+
+### Exit criteria
+
+- [ ] No visible feature regressions.
+- [ ] Existing tests pass.
+- [ ] A real Pi RPC smoke test passes.
+- [ ] Trust/runtime failures have actionable UI.
+- [ ] New subsystems can be tested without constructing the entire view provider.
+
+## Phase 1 — v0.4 low-hanging fruit
+
+### Session improvements
+
+- [ ] Pin and favorite sessions.
+- [ ] Copy session ID.
+- [ ] Copy/open session path.
+- [ ] Export a session to HTML using `pi --export`.
+- [ ] Show context-window usage.
+- [ ] Add compact-session action.
+- [ ] Add reload-context action.
+- [ ] Show auto-compaction and auto-retry state.
+- [ ] Add running/idle/unread badges.
+- [ ] Persist session filters and sorting.
+- [ ] Improve automatic session display names.
+- [ ] Add “Open in Pi terminal.”
+
+### Runtime and resource control center
+
+- [ ] Display Pi version, binary path, agent directory, and session directory.
+- [ ] List configured packages with user/project scope.
+- [ ] Install packages through `pi install`.
+- [ ] Remove packages through `pi remove`.
+- [ ] Update packages through `pi update --extensions`.
+- [ ] List loaded extensions.
+- [ ] List skills and show source/scope.
+- [ ] List prompt templates and show source/scope.
+- [ ] List agent definitions and show source/scope.
+- [ ] Open resource files.
+- [ ] Create, rename, and delete user/project skills.
+- [ ] Create, rename, and delete prompt templates.
+- [ ] Create, rename, and delete agent definitions.
+- [ ] Clearly warn about trusted project-local executable resources.
+- [ ] Restart/reload Pi when resource changes require it.
+
+### Read-only VS Code bridge
+
+- [ ] Add a lean `vscode_context` Pi tool.
+- [ ] Support diagnostics.
+- [ ] Support active selection/editor state.
+- [ ] Support open-editor metadata.
+- [ ] Support document/workspace symbols.
+- [ ] Support definitions.
+- [ ] Support references.
+- [ ] Support hover information.
+- [ ] Add `/vscode-selection`.
+- [ ] Add `/vscode-diagnostics`.
+- [ ] Add `/vscode-symbols`.
+- [ ] Add `/vscode-references`.
+- [ ] Keep all bridge results bounded.
+- [ ] Keep editor mutation disabled in the first bridge release.
+
+### Extension UI
+
+- [ ] Render selection requests inline.
+- [ ] Render confirmation requests inline.
+- [ ] Render text/editor input inline.
+- [ ] Render multi-question questionnaires inline.
+- [ ] Add reusable todo/status widgets.
+- [ ] Keep native VS Code dialogs as fallback.
+
+## Phase 2 — v0.5 persistent multi-session workspace
+
+- [ ] Introduce a `PiRuntimeManager` owning multiple session runtimes.
+- [ ] Add persistent open-session tabs.
+- [ ] Restore open tabs after VS Code reload.
+- [ ] Lazily start dormant session sidecars.
+- [ ] Keep actively streaming background sessions alive.
+- [ ] Display background progress and completion badges.
+- [ ] Add unread indicators.
+- [ ] Prevent duplicate sidecars for one session.
+- [ ] Add a configurable maximum number of active runtimes.
+- [ ] Suspend idle runtimes without closing their session tabs.
+- [ ] Scope prompt queues to each session.
+- [ ] Scope change sets/checkpoints to each session/task.
+- [ ] Allow a session to open in an editor-area panel.
+- [ ] Support optional side-by-side session views.
+- [ ] Implement a workspace write lease for non-isolated runtimes.
+- [ ] Run waiting sessions read-only or queue them while another session owns the write lease.
+
+### Exit criteria
+
+- [ ] Two sessions can stream independently.
+- [ ] VS Code reload restores the session layout.
+- [ ] Background completion is visible.
+- [ ] Concurrent root-workspace writes are prevented.
+- [ ] Each session has independent state, queue, and change review.
+
+## Phase 3 — v0.6 Agent Lab MVP
+
+- [ ] Discover user agents from `~/.pi/agent/agents/*.md`.
+- [ ] Discover project agents from `.pi/agents/*.md`.
+- [ ] Support name, description, model, tools, and invocation policy frontmatter.
+- [ ] Add Architect role.
+- [ ] Add Explorer role.
+- [ ] Add Reviewer role.
+- [ ] Add Tester role.
+- [ ] Add Researcher role.
+- [ ] Add Security role.
+- [ ] Add Documentation role.
+- [ ] Spawn each subagent in an isolated Pi process.
+- [ ] Start with an exact read-only tool allowlist.
+- [ ] Forbid `edit`, `write`, and unrestricted `bash` in the MVP.
+- [ ] Support bounded parallel execution.
+- [ ] Default to no more than four concurrent subagents.
+- [ ] Stream progress and tool events.
+- [ ] Show turns, tokens, cost, model, duration, and status.
+- [ ] Add per-agent token/cost budgets.
+- [ ] Add stop and retry controls.
+- [ ] Return bounded results to the parent Pi session.
+- [ ] Show complete results in Agent Lab.
+- [ ] Add optional Honcho peer identities for durable conclusions.
+- [ ] Prevent noisy transcripts from being written to Honcho memory.
+
+### Exit criteria
+
+- [ ] Agent Lab cannot modify the workspace.
+- [ ] Cancellation terminates all child processes.
+- [ ] Limits are enforced.
+- [ ] Parent-agent failures do not crash subagents and vice versa.
+- [ ] Costs are visible and bounded.
+
+## Phase 4 — v0.7 safe coding agents
+
+- [ ] Create a dedicated Git branch/worktree per writing agent.
+- [ ] Capture main-workspace state before launching an implementer.
+- [ ] Track worktree ownership and lifecycle.
+- [ ] Run writing agents only in their assigned worktree.
+- [ ] Capture a per-agent change set.
+- [ ] Run selected validation inside the agent worktree.
+- [ ] Present agent diffs in native VS Code review.
+- [ ] Accept or reject individual agent files.
+- [ ] Generate/apply a patch from selected changes.
+- [ ] Detect merge conflicts before integration.
+- [ ] Require explicit approval before merging.
+- [ ] Recover and clean up abandoned worktrees after crashes.
+- [ ] Support Architect → Implementer → Tester → Reviewer workflows.
+- [ ] Compare competing implementations.
+- [ ] Preserve a complete audit trail of agent actions and outcomes.
+
+## Phase 5 — advanced studio backlog
+
+- [ ] Package marketplace search.
+- [ ] Safe package metadata and preview rendering.
+- [ ] Rich model/provider configuration with schema validation.
+- [ ] Masked provider/auth readiness dashboard.
+- [ ] Mermaid rendering.
+- [ ] KaTeX math rendering.
+- [ ] Model vendor icons.
+- [ ] Conversation minimap.
+- [ ] Incremental history pagination.
+- [ ] Session lineage/branch graph.
+- [ ] Compare two sessions.
+- [ ] Non-Git file snapshot fallback.
+- [ ] `/btw` side questions that do not alter the main thread.
+- [ ] Saved agent teams.
+- [ ] Saved project workflows/playbooks.
+- [ ] Per-team cost budgets.
+- [ ] Permission profiles by agent role.
+- [ ] Explicitly approved VS Code code actions and workspace edits.
+- [ ] Localization.
+- [~] AI-generated commit messages.
+- [~] Terminal-first interface; likely limited to an “Open in Terminal” action.
+
+---
+
+# Reference-project findings
+
+We reviewed two MIT-licensed Pi VS Code projects for ideas:
+
+## `auchan/pi-on-code`
+
+Strong ideas:
+
+- persistent multi-session workspace;
+- rich streaming and conversation navigation;
+- package/extension marketplace;
+- session tabs and side-by-side panes;
+- consolidated VS Code bridge tool;
+- session export and history navigation.
+
+Decision: adopt selected product ideas, but retain our RPC-sidecar architecture instead of dynamically hosting Pi's SDK in the VS Code process.
+
+## `JohnnyZ93/pi-agent-studio`
+
+Strong ideas:
+
+- per-panel Pi RPC sessions;
+- full resources/settings studio;
+- bundled todo, questionnaire, permission, rewind, and subagent extensions;
+- local editor bridge;
+- structured agent definitions;
+- parallel subagent output and usage reporting;
+- Mermaid/math/model-brand presentation.
+
+Decision: use its extension-pack and Agent Lab concepts as inspiration, but do not duplicate its MCP stack or allow writing subagents to share the primary worktree.
+
+## Explicit non-goals
+
+- Recreating Pi's agent loop
+- Forking Pi's session format
+- Maintaining a second credential store
+- Building another MCP client implementation
+- Exposing a large set of autonomous editor-mutation tools by default
+- Running multiple write-capable agents concurrently in the same working tree
+- Treating repository `HEAD` as the user's pre-task state
+
+---
+
+# Definition of done
+
+A planned item becomes complete only when:
+
+1. Its implementation uses Pi/VS Code authoritative APIs rather than duplicating core behavior.
+2. User data, credentials, Git state, and project trust are handled safely.
+3. It has focused automated tests.
+4. TypeScript, webview build, and the full test suite pass.
+5. A packaged VSIX contains the required runtime files.
+6. The feature is smoke-tested against a real Pi process.
+7. `README.md`, `AGENTS.md`, and this file reflect the shipped behavior.
