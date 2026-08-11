@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { runTests } from "@vscode/test-electron";
 
 async function main(): Promise<void> {
@@ -7,6 +8,7 @@ async function main(): Promise<void> {
   await runTests({
     extensionDevelopmentPath,
     extensionTestsPath,
+    cachePath: process.env.PI_VSCODE_TEST_CACHE ?? join(homedir(), ".cache", "pi-vscode", "vscode-test"),
     launchArgs: ["--disable-extensions", "--skip-welcome", "--skip-release-notes"],
   });
 }
