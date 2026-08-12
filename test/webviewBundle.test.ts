@@ -14,8 +14,10 @@ const shell = `<!doctype html><html><body>
   <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
   <section id="agent-lab-panel"><button data-close-panel="agent-lab-panel"></button><div id="agent-lab-summary"></div><textarea id="agent-lab-task"></textarea><div id="agent-lab-roles"></div><button id="agent-lab-run"></button><button id="agent-lab-stop"></button><button id="agent-lab-refresh"></button><div id="agent-lab-runs"></div><aside id="artifact-inspector" class="hidden"><strong id="inspector-title"></strong><span id="inspector-meta"></span><button id="inspector-close"></button><nav id="inspector-tabs"></nav><div id="inspector-body"></div></aside></section>
   <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>
+  <div id="dispatch-bar"><select id="dispatch-mode"></select><input id="dispatch-include-pi" type="checkbox" checked><div id="dispatch-roles"></div><div id="dispatch-shortcuts"></div></div>
   <div id="context-chips"></div><textarea id="prompt"></textarea>
   <button id="sessions"></button><button id="resources"></button><button id="agent-lab"></button><button id="compact"></button><button id="reload-session"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
+  <span id="dispatch-summary"></span>
   <button id="mcp-reconnect-all"></button><button id="mcp-config"></button>
   <button id="attach"></button><button id="stop"></button><button id="send"></button>
   <span id="queue"></span><div id="command-menu"></div><div id="context-menu"></div>
@@ -132,6 +134,13 @@ describe("bundled Pi webview", () => {
     expect(document.querySelector("#inspector-body")?.textContent).toContain("Docs");
     (document.querySelector("#inspector-tabs button:nth-child(2)") as HTMLButtonElement | null)?.click();
     expect(document.querySelector("#inspector-body")?.textContent).toContain("code.visualstudio.com");
+    expect(document.querySelector("#dispatch-mode")?.querySelectorAll("option").length).toBeGreaterThan(1);
+    expect(document.querySelector("#dispatch-roles")?.textContent).toContain("Architect");
+    (document.querySelector("#dispatch-mode") as HTMLSelectElement).value = "plan";
+    document.querySelector("#dispatch-mode")?.dispatchEvent(new window.Event("change", { bubbles: true }));
+    (document.querySelector("#prompt") as HTMLTextAreaElement).value = "Plan a safe change";
+    (document.querySelector("#send") as HTMLButtonElement).click();
+    expect(posted.some((message) => message.type === "dispatch" && message.mode === "plan" && Array.isArray(message.roleIds) && message.roleIds.includes("architect"))).toBe(true);
 
     window.dispatchEvent(new window.MessageEvent("message", {
       data: { type: "sessionStats", stats: { cost: 0.1234, contextUsage: { tokens: 60_000, contextWindow: 200_000, percent: 30 } } },

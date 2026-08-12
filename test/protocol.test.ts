@@ -16,6 +16,14 @@ describe("typed webview protocol", () => {
     expect(parseWebviewMessage({ type: "prompt", text: 42 })).toBeUndefined();
     expect(parseWebviewMessage({ type: "prompt", text: "x".repeat(2 * 1024 * 1024 + 1) })).toBeUndefined();
     expect(parseWebviewMessage({ type: "runAgentLab", roleIds: ["architect", "reviewer"], task: "check this" })).toEqual({ type: "runAgentLab", roleIds: ["architect", "reviewer"], task: "check this" });
+    expect(parseWebviewMessage({ type: "dispatch", text: "look this up", includePi: false, roleIds: ["researcher"], mode: "research" })).toEqual({
+      type: "dispatch",
+      text: "look this up",
+      includePi: false,
+      roleIds: ["researcher"],
+      mode: "research",
+    });
+    expect(parseWebviewMessage({ type: "dispatch", text: "hello", includePi: "yes", roleIds: ["researcher"], mode: "ask" })).toBeUndefined();
     expect(parseWebviewMessage({ type: "editAgentRole", roleId: "researcher" })).toEqual({ type: "editAgentRole", roleId: "researcher" });
     expect(parseWebviewMessage({ type: "runAgentLab", roleIds: ["architect"], task: "x".repeat(64 * 1024 + 1) })).toBeUndefined();
     expect(parseWebviewMessage({ type: "deleteEverything" })).toBeUndefined();

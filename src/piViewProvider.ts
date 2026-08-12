@@ -20,6 +20,7 @@ import {
 } from "./protocol";
 import type { PiRuntime } from "./runtime/piRuntime";
 import { PiRuntimeManager, type PiRuntimeManagerEvent } from "./runtime/piRuntimeManager";
+import { composeAgentTask, parseDispatchMode, resolveDispatchRoles, withReviewContext } from "./dispatch";
 
 interface ContextCompletion {
   label: string;
@@ -314,11 +315,15 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         if (this.runtime.running) {
           await this.refresh().catch((error) => this.showError(error));
           if (this.changeReview.changeSet?.files.length) this.post({ type: "changeSet", changeSet: this.changeReview.changeSet });
+          await this.agentLab.open();
           this.post({ type: "connection", status: "ready", message: "Pi is ready." });
         }
         break;
       case "prompt":
         await this.sendPrompt(message.text);
+        break;
+      case "dispatch":
+        await this.dispatch(message.text, message.includePi, message.roleIds, message.mode);
         break;
       case "abort":
         await this.abort();
@@ -445,6 +450,19 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         this.extensionUi.respond(message.id, message);
         break;
     }
+  }
+
+  private async dispatch(text: string, includePi: boolean, roleIds: string[], mode: string): Promise<void> {
+    const prompt = text.trim();
+    if (!prompt) return;
+    const resolvedMode = parseDispatchMode(mode);
+    const expanded = await this.withMentionedContexts(withReviewContext(resolvedMode, prompt));
+    const selected = resolveDispatchRoles(roleIds, (await this.agentLab.roleIds()).filter(Boolean));
+    if (selected.length) {
+      await this.agentLab.run(selected, composeAgentTask(resolvedMode, expanded));
+      if (!includePi && !prompt.startsWith("/")) this.post({ type: "showAgentLab" });
+    }
+    if (includePi || prompt.startsWith("/") || !selected.length) await this.sendPrompt(prompt);
   }
 
   private async sendPrompt(text: string): Promise<void> {
@@ -996,11 +1014,18 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     <div id="mcp-prompts" class="panel-list compact"></div>
   </section>
   <footer class="composer-shell">
+    <div id="dispatch-bar" class="dispatch-bar" aria-label="Dispatch console">
+      <label class="dispatch-field"><span>Mode</span><select id="dispatch-mode" aria-label="Dispatch mode"></select></label>
+      <label class="dispatch-include"><input id="dispatch-include-pi" type="checkbox" checked> Pi thread</label>
+      <div id="dispatch-roles" class="dispatch-roles" aria-label="Dispatch agent targets"></div>
+      <div id="dispatch-shortcuts" class="dispatch-shortcuts" aria-label="Context shortcuts"></div>
+    </div>
     <div id="context-chips" class="context-chips hidden"></div>
     <textarea id="prompt" rows="3" placeholder="Ask Pi…  (@ for context, / for commands)" aria-label="Message Pi"></textarea>
     <div class="composer-actions">
       <button id="attach" title="Attach current editor context">@</button>
       <span id="queue" class="queue"></span>
+      <span id="dispatch-summary" class="dispatch-summary">Pi thread</span>
       <button id="stop" class="stop hidden">Stop</button>
       <button id="send" class="send">Send</button>
     </div>
