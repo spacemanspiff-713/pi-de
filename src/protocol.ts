@@ -10,9 +10,23 @@ export interface PiState {
   model?: PiModelState | null;
   thinkingLevel?: string;
   isStreaming?: boolean;
+  isCompacting?: boolean;
+  isRetrying?: boolean;
+  autoCompactionEnabled?: boolean;
+  autoRetryEnabled?: boolean;
   sessionFile?: string;
   sessionId?: string;
   sessionName?: string;
+}
+
+export interface SessionStats {
+  tokens?: number;
+  cost?: number;
+  contextUsage?: {
+    tokens?: number | null;
+    contextWindow?: number;
+    percent?: number | null;
+  };
 }
 
 export interface NormalizedMessage {
@@ -89,7 +103,11 @@ export type WebviewToHostMessage =
   | { type: "showOutput" }
   | { type: "manageTrust" }
   | { type: "openRuntimeSettings" }
-  | { type: "retryRuntime" };
+  | { type: "retryRuntime" }
+  | { type: "compactSession" }
+  | { type: "reloadSession" }
+  | { type: "openResources" }
+  | { type: "extensionUiResponse"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
 
 export type HostToWebviewMessage =
   | { type: "connection"; status: string; message: string }
@@ -98,6 +116,7 @@ export type HostToWebviewMessage =
   | { type: "commands"; commands: PiCommandInfo[] }
   | { type: "contextResults"; requestId: string; items: ContextCompletionItem[] }
   | ({ type: "state" } & PiState)
+  | { type: "sessionStats"; stats: SessionStats }
   | { type: "clear" }
   | { type: "userPrompt"; text: string }
   | { type: "textDelta"; delta: string }
@@ -111,6 +130,7 @@ export type HostToWebviewMessage =
   | { type: "error"; message: string }
   | { type: "extensionStatus"; key: unknown; text: unknown }
   | { type: "widget"; key: unknown; lines: string[] }
+  | { type: "extensionUiRequest"; id: string; method: "select" | "confirm" | "input" | "editor"; title: string; message?: string; placeholder?: string; prefill?: string; options?: string[] }
   | { type: "prefill"; text: unknown }
   | { type: "changeSet"; changeSet: ChangeSet }
   | { type: "showChanges"; changeSet: ChangeSet }
@@ -124,6 +144,7 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
   const noData = new Set([
     "ready", "abort", "newSession", "openSession", "restart", "pickModel", "pickThinking",
     "reviewChanges", "openMcpConfig", "showOutput", "manageTrust", "openRuntimeSettings", "retryRuntime",
+    "compactSession", "reloadSession", "openResources",
   ]);
   if (noData.has(value.type)) return { type: value.type } as WebviewToHostMessage;
   if (["prompt", "copyText", "insertText"].includes(value.type)) {
@@ -144,6 +165,12 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
     return query === undefined || requestId === undefined
       ? undefined
       : { type: value.type, query, requestId };
+  }
+  if (value.type === "extensionUiResponse") {
+    const id = boundedString(value.id, 256);
+    const response = optionalBoundedString(value.value, 2 * 1024 * 1024);
+    return id === undefined || response === undefined || (value.confirmed !== undefined && typeof value.confirmed !== "boolean") || (value.cancelled !== undefined && typeof value.cancelled !== "boolean")
+      ? undefined : { type: value.type, id, value: response || undefined, confirmed: value.confirmed as boolean | undefined, cancelled: value.cancelled as boolean | undefined };
   }
   if (value.type === "mcpAction") {
     const action = boundedString(value.action, 64);

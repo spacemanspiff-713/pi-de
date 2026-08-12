@@ -5,6 +5,8 @@ import { ChangeReviewController } from "./controllers/changeReviewController";
 import { ExtensionUiBridge } from "./controllers/extensionUiBridge";
 import { McpController } from "./controllers/mcpController";
 import { SessionController } from "./controllers/sessionController";
+import { ResourceController } from "./controllers/resourceController";
+import { VscodeContextController } from "./controllers/vscodeContextController";
 import { contextScore, extractMentions, mentionText, truncateContext } from "./contextMentions";
 import type { RpcRecord } from "./piRpcClient";
 import {
@@ -13,6 +15,7 @@ import {
   type NormalizedMessage,
   type PiCommandInfo,
   type PiState,
+  type SessionStats,
 } from "./protocol";
 import { PiRuntime, type PiRuntimeEvent } from "./runtime/piRuntime";
 
@@ -30,6 +33,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private view?: vscode.WebviewView;
   private startPromise?: Promise<void>;
   private state: PiState = {};
+  private sessionStats: SessionStats = {};
   private disposed = false;
   private fileContextCache?: { expiresAt: number; items: ContextCompletion[] };
   private availableCommands: PiCommandInfo[] = [];
@@ -38,6 +42,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private readonly sessions: SessionController;
   private readonly mcp: McpController;
   private readonly extensionUi: ExtensionUiBridge;
+  private readonly resources: ResourceController;
   private readonly unsubscribeRuntime: () => void;
 
   constructor(
@@ -66,7 +71,8 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       post,
       () => this.refreshCommands(),
     );
-    this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp);
+    this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp, new VscodeContextController(), () => Boolean(this.view));
+    this.resources = new ResourceController(folder, () => this.runtime.health, () => this.restart(), output);
     this.unsubscribeRuntime = this.runtime.onEvent((event) => void this.handleRuntimeEvent(event));
   }
 
@@ -98,6 +104,10 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   async openSession(): Promise<void> {
     await this.ensureStarted();
     await this.sessions.openLibrary();
+  }
+
+  async openControlCenter(): Promise<void> {
+    await this.resources.open();
   }
 
   async reviewChanges(): Promise<void> {
@@ -335,6 +345,18 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       case "retryRuntime":
         await this.restart();
         break;
+      case "compactSession":
+        await this.compactSession();
+        break;
+      case "reloadSession":
+        await this.reloadSession();
+        break;
+      case "openResources":
+        await this.resources.open();
+        break;
+      case "extensionUiResponse":
+        this.extensionUi.respond(message.id, message);
+        break;
     }
   }
 
@@ -360,6 +382,9 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     }
 
     const message = await this.withMentionedContexts(prompt);
+    if (!this.state.sessionName && this.state.sessionFile) {
+      void client.request({ type: "set_session_name", name: prompt.replace(/\s+/g, " ").slice(0, 72) }).then(() => this.refreshState()).catch(() => undefined);
+    }
     this.post({ type: "userPrompt", text: prompt });
     this.post({ type: "busy", value: true });
 
@@ -419,6 +444,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     if (!response) return;
     this.state = asRecord(response.data) as PiState;
     if (this.state.sessionFile) await this.sessions.rememberCurrent();
+    await this.refreshSessionStats();
     this.postState();
   }
 
@@ -498,10 +524,23 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         this.post({ type: "queue", steering: record.steering, followUp: record.followUp });
         break;
       case "compaction_start":
+        this.state.isCompacting = true;
+        this.postState();
         this.post({ type: "notice", message: `Compacting context (${String(record.reason ?? "manual")})…` });
         break;
+      case "compaction_end":
+        this.state.isCompacting = false;
+        this.postState();
+        await this.refreshSessionStats().catch(() => undefined);
+        break;
       case "auto_retry_start":
+        this.state.isRetrying = true;
+        this.postState();
         this.post({ type: "notice", message: `Retrying in ${String(record.delayMs ?? "")}ms…` });
+        break;
+      case "auto_retry_end":
+        this.state.isRetrying = false;
+        this.postState();
         break;
       case "extension_error":
         this.post({ type: "error", message: String(record.error ?? "A Pi extension failed") });
@@ -669,12 +708,47 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     await vscode.env.openExternal(uri);
   }
 
+  private async compactSession(): Promise<void> {
+    const client = this.runtime.client;
+    if (!client?.running || this.state.isStreaming || this.state.isCompacting) return;
+    await client.request({ type: "compact" }, 120_000);
+  }
+
+  private async reloadSession(): Promise<void> {
+    const client = this.runtime.client;
+    const sessionPath = this.state.sessionFile;
+    if (!client?.running || !sessionPath || this.state.isStreaming || this.state.isCompacting) return;
+    const response = await client.request({ type: "switch_session", sessionPath });
+    if (asRecord(response.data).cancelled !== true) await this.refresh();
+  }
+
+  private async refreshSessionStats(): Promise<void> {
+    const response = await this.runtime.client?.request({ type: "get_session_stats" }).catch(() => undefined);
+    if (!response) return;
+    const raw = asRecord(response.data);
+    const contextUsage = asRecord(raw.contextUsage);
+    this.sessionStats = {
+      tokens: numberValue(asRecord(raw.tokens).total),
+      cost: numberValue(raw.cost),
+      contextUsage: Object.keys(contextUsage).length ? {
+        tokens: nullableNumber(contextUsage.tokens),
+        contextWindow: numberValue(contextUsage.contextWindow),
+        percent: nullableNumber(contextUsage.percent),
+      } : undefined,
+    };
+    this.post({ type: "sessionStats", stats: this.sessionStats });
+  }
+
   private postState(): void {
     this.post({
       type: "state",
       model: this.state.model,
       thinkingLevel: this.state.thinkingLevel,
       isStreaming: this.state.isStreaming,
+      isCompacting: this.state.isCompacting,
+      isRetrying: this.state.isRetrying,
+      autoCompactionEnabled: this.state.autoCompactionEnabled,
+      autoRetryEnabled: this.state.autoRetryEnabled,
       sessionId: this.state.sessionId,
       sessionName: this.state.sessionName,
     });
@@ -714,6 +788,9 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     <div class="brand"><span class="status-dot" id="status-dot"></span><strong>PiDE</strong></div>
     <div class="actions">
       <button id="sessions" title="Session library">◷</button>
+      <button id="resources" title="PiDE control center">⚙</button>
+      <button id="compact" title="Compact session context">⇣</button>
+      <button id="reload-session" title="Reload session context">↻</button>
       <button id="changes" class="hidden" title="Review changes">Δ</button>
       <button id="mcp" title="MCP control center">⌁</button>
       <button id="new" title="New session">＋</button>
@@ -724,6 +801,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   <section class="selectors">
     <button id="model" class="selector">Select model</button>
     <button id="thinking" class="selector">thinking: —</button>
+    <span id="session-stats" class="session-stats" title="Session context usage">context: —</span>
   </section>
   <div id="banner" class="banner">Starting Pi…</div>
   <section id="runtime-health" class="runtime-health hidden" aria-live="polite">
@@ -737,6 +815,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     </div>
   </section>
   <div id="widget" class="widget hidden"></div>
+  <section id="extension-request" class="control-panel hidden" aria-live="assertive"></section>
   <div id="change-summary" class="change-summary hidden"></div>
   <main id="transcript" aria-live="polite"></main>
   <div id="jump" class="jump hidden"><button>Jump to latest</button></div>
@@ -822,6 +901,14 @@ function asRecord(value: unknown): Record<string, any> {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function nullableNumber(value: unknown): number | null | undefined {
+  return value === null ? null : numberValue(value);
 }
 
 function errorMessage(error: unknown): string {

@@ -212,66 +212,66 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Trust/runtime failures have actionable onboarding UI.
 - [x] New runtime, protocol, session, change, MCP, and extension-UI subsystems can be exercised without constructing the entire view provider.
 
-## Phase 1 — v0.4 low-hanging fruit
+## Phase 1 — v0.4 low-hanging fruit — completed in v0.4.0
 
 ### Session improvements
 
-- [ ] Pin and favorite sessions.
-- [ ] Copy session ID.
-- [ ] Copy/open session path.
-- [ ] Export a session to HTML using `pi --export`.
-- [ ] Show context-window usage.
-- [ ] Add compact-session action.
-- [ ] Add reload-context action.
-- [ ] Show auto-compaction and auto-retry state.
-- [ ] Add running/idle/unread badges.
-- [ ] Persist session filters and sorting.
-- [ ] Improve automatic session display names.
-- [ ] Add “Open in Pi terminal.”
+- [x] Pin and favorite sessions.
+- [x] Copy session ID.
+- [x] Copy/open session path.
+- [x] Export a session to HTML (active sessions use RPC; inactive sessions use `pi --export`).
+- [x] Show context-window usage.
+- [x] Add compact-session action.
+- [x] Add reload-context action.
+- [x] Show auto-compaction and auto-retry state.
+- [x] Add running/idle badges. Unread badges are a Phase 2 background-session feature.
+- [x] Persist session filters and sorting.
+- [x] Improve automatic session display names.
+- [x] Add “Open in Pi terminal.”
 
 ### Runtime and resource control center
 
-- [ ] Display Pi version, binary path, agent directory, and session directory.
-- [ ] List configured packages with user/project scope.
-- [ ] Install packages through `pi install`.
-- [ ] Remove packages through `pi remove`.
-- [ ] Update packages through `pi update --extensions`.
-- [ ] List loaded extensions.
-- [ ] List skills and show source/scope.
-- [ ] List prompt templates and show source/scope.
-- [ ] List agent definitions and show source/scope.
-- [ ] Open resource files.
-- [ ] Create, rename, and delete user/project skills.
-- [ ] Create, rename, and delete prompt templates.
-- [ ] Create, rename, and delete agent definitions.
-- [ ] Clearly warn about trusted project-local executable resources.
-- [ ] Restart/reload Pi when resource changes require it.
+- [x] Display Pi version, binary path, agent directory, and session directory.
+- [x] List configured packages with user/project scope.
+- [x] Install packages through `pi install`.
+- [x] Remove packages through `pi remove`.
+- [x] Update packages through `pi update --extensions`.
+- [x] List loaded extensions.
+- [x] List skills and show source/scope.
+- [x] List prompt templates and show source/scope.
+- [x] List agent definitions and show source/scope.
+- [x] Open resource files.
+- [x] Create, rename, and delete user/project skills.
+- [x] Create, rename, and delete prompt templates.
+- [x] Create, rename, and delete agent definitions.
+- [x] Clearly warn about trusted project-local executable resources.
+- [x] Restart/reload Pi when resource changes require it.
 
 ### Read-only VS Code bridge
 
-- [ ] Add a lean `vscode_context` Pi tool.
-- [ ] Support diagnostics.
-- [ ] Support active selection/editor state.
-- [ ] Support open-editor metadata.
-- [ ] Support document/workspace symbols.
-- [ ] Support definitions.
-- [ ] Support references.
-- [ ] Support hover information.
-- [ ] Add `/vscode-selection`.
-- [ ] Add `/vscode-diagnostics`.
-- [ ] Add `/vscode-symbols`.
-- [ ] Add `/vscode-references`.
-- [ ] Keep all bridge results bounded.
-- [ ] Keep editor mutation disabled in the first bridge release.
+- [x] Add a lean `vscode_context` Pi tool.
+- [x] Support diagnostics.
+- [x] Support active selection/editor state.
+- [x] Support open-editor metadata.
+- [x] Support document/workspace symbols.
+- [x] Support definitions.
+- [x] Support references.
+- [x] Support hover information.
+- [x] Add `/vscode-selection`.
+- [x] Add `/vscode-diagnostics`.
+- [x] Add `/vscode-symbols`.
+- [x] Add `/vscode-references`.
+- [x] Keep all bridge results bounded.
+- [x] Keep editor mutation disabled in the first bridge release.
 
 ### Extension UI
 
-- [ ] Render selection requests inline.
-- [ ] Render confirmation requests inline.
-- [ ] Render text/editor input inline.
-- [ ] Render multi-question questionnaires inline.
-- [ ] Add reusable todo/status widgets.
-- [ ] Keep native VS Code dialogs as fallback.
+- [x] Render selection requests inline.
+- [x] Render confirmation requests inline.
+- [x] Render text/editor input inline.
+- [x] Render multi-question questionnaires inline as a structured editor response.
+- [x] Add reusable todo/status widgets.
+- [x] Keep native VS Code dialogs as fallback.
 
 ## Phase 2 — v0.5 persistent multi-session workspace
 

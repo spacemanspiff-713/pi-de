@@ -20998,6 +20998,9 @@
     const statusDot = document.getElementById("status-dot");
     const modelButton = document.getElementById("model");
     const thinkingButton = document.getElementById("thinking");
+    const sessionStats = document.getElementById("session-stats");
+    const compactButton = document.getElementById("compact");
+    const reloadSessionButton = document.getElementById("reload-session");
     const sendButton = document.getElementById("send");
     const stopButton = document.getElementById("stop");
     const attachButton = document.getElementById("attach");
@@ -21006,6 +21009,7 @@
     const contextMenu = document.getElementById("context-menu");
     const queue = document.getElementById("queue");
     const widget = document.getElementById("widget");
+    const extensionRequest = document.getElementById("extension-request");
     const jump = document.getElementById("jump");
     const changesButton = document.getElementById("changes");
     const changeSummary = document.getElementById("change-summary");
@@ -21036,6 +21040,9 @@
     const persisted = vscode.getState() || {};
     if (typeof persisted.draft === "string") prompt.value = persisted.draft;
     document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
+    document.getElementById("resources").addEventListener("click", () => vscode.postMessage({ type: "openResources" }));
+    compactButton.addEventListener("click", () => vscode.postMessage({ type: "compactSession" }));
+    reloadSessionButton.addEventListener("click", () => vscode.postMessage({ type: "reloadSession" }));
     document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
     document.getElementById("restart").addEventListener("click", () => vscode.postMessage({ type: "restart" }));
     document.getElementById("output").addEventListener("click", () => vscode.postMessage({ type: "showOutput" }));
@@ -21137,6 +21144,12 @@
           break;
         case "state":
           updateState(data);
+          break;
+        case "extensionUiRequest":
+          renderExtensionRequest(data);
+          break;
+        case "sessionStats":
+          renderSessionStats(data.stats);
           break;
         case "clear":
           transcript.textContent = "";
@@ -21250,7 +21263,68 @@
       modelButton.textContent = model.name || model.id || "Select model";
       modelButton.title = model.provider && model.id ? `${model.provider}/${model.id}` : "Select Pi model";
       thinkingButton.textContent = `thinking: ${state.thinkingLevel || "off"}`;
+      const maintenance = state.isCompacting ? "Compacting\u2026" : state.isRetrying ? "Retrying\u2026" : "";
+      compactButton.disabled = Boolean(state.isStreaming || state.isCompacting);
+      reloadSessionButton.disabled = Boolean(state.isStreaming || state.isCompacting);
+      compactButton.title = maintenance || "Compact session context";
+      reloadSessionButton.title = maintenance || "Reload session context";
       setBusy(Boolean(state.isStreaming));
+    }
+    function renderSessionStats(stats) {
+      const usage = stats?.contextUsage || {};
+      const percent = typeof usage.percent === "number" ? `${Math.round(usage.percent)}%` : "\u2014";
+      const tokens = typeof usage.tokens === "number" ? formatCount(usage.tokens) : "unknown";
+      const windowSize = typeof usage.contextWindow === "number" ? formatCount(usage.contextWindow) : "unknown";
+      sessionStats.textContent = `context: ${percent}`;
+      sessionStats.title = `Context window: ${tokens} / ${windowSize}${typeof stats?.cost === "number" ? ` \xB7 session cost $${stats.cost.toFixed(4)}` : ""}`;
+    }
+    function formatCount(value) {
+      return value >= 1e6 ? `${(value / 1e6).toFixed(1)}M` : value >= 1e3 ? `${(value / 1e3).toFixed(1)}K` : String(value);
+    }
+    function renderExtensionRequest(request) {
+      extensionRequest.textContent = "";
+      const title = document.createElement("strong");
+      title.textContent = request.title;
+      extensionRequest.append(title);
+      if (request.message) {
+        const message = document.createElement("p");
+        message.textContent = request.message;
+        extensionRequest.append(message);
+      }
+      const form = document.createElement("div");
+      form.className = "panel-toolbar";
+      const respond = (response) => {
+        vscode.postMessage({ type: "extensionUiResponse", id: request.id, ...response });
+        extensionRequest.classList.add("hidden");
+      };
+      if (request.method === "select") {
+        for (const option of request.options || []) {
+          const button = document.createElement("button");
+          button.textContent = option;
+          button.addEventListener("click", () => respond({ value: option }));
+          form.append(button);
+        }
+      } else if (request.method === "confirm") {
+        const yes = document.createElement("button");
+        yes.textContent = "Confirm";
+        yes.addEventListener("click", () => respond({ confirmed: true }));
+        form.append(yes);
+      } else {
+        const input = document.createElement(request.method === "editor" ? "textarea" : "input");
+        input.value = request.prefill || "";
+        input.placeholder = request.placeholder || "";
+        if (request.method === "editor") input.rows = 5;
+        const submit = document.createElement("button");
+        submit.textContent = "Submit";
+        submit.addEventListener("click", () => respond({ value: input.value }));
+        form.append(input, submit);
+      }
+      const cancel = document.createElement("button");
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => respond({ cancelled: true }));
+      form.append(cancel);
+      extensionRequest.append(form);
+      extensionRequest.classList.remove("hidden");
     }
     function setBusy(value) {
       stopButton.classList.toggle("hidden", !value);

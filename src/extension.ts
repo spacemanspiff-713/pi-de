@@ -15,6 +15,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("pide.openChat", () => provider.reveal()),
     vscode.commands.registerCommand("pide.newSession", () => provider.newSession()),
     vscode.commands.registerCommand("pide.openSession", () => provider.openSession()),
+    vscode.commands.registerCommand("pide.openControlCenter", () => provider.openControlCenter()),
     vscode.commands.registerCommand("pide.reviewChanges", () => provider.reviewChanges()),
     vscode.commands.registerCommand("pide.abort", () => provider.abort()),
     vscode.commands.registerCommand("pide.restart", () => provider.restart()),

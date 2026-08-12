@@ -1,12 +1,19 @@
 import * as vscode from "vscode";
 import type { PiRpcClient, RpcRecord } from "../piRpcClient";
 import type { McpController } from "./mcpController";
+import type { VscodeContextController } from "./vscodeContextController";
+
+const CONTEXT_REQUEST_TITLE = "__PIDE_VSCODE_CONTEXT__";
 
 export class ExtensionUiBridge {
+  private readonly pending = new Map<string, (response: { value?: string; confirmed?: boolean; cancelled?: boolean }) => void>();
+
   constructor(
     private readonly client: () => PiRpcClient | undefined,
     private readonly post: (message: Record<string, unknown>) => void,
     private readonly mcp: McpController,
+    private readonly vscodeContext: VscodeContextController,
+    private readonly inlineAvailable: () => boolean,
   ) {}
 
   async handle(request: RpcRecord): Promise<void> {
@@ -15,6 +22,16 @@ export class ExtensionUiBridge {
     if (!client || typeof id !== "string") return;
     const method = String(request.method ?? "");
 
+    if (method === "input" && request.title === CONTEXT_REQUEST_TITLE) {
+      const value = await this.vscodeContext.request(stringValue(request.placeholder));
+      client.send({ type: "extension_ui_response", id, value });
+      return;
+    }
+    if (["select", "confirm", "input", "editor", "questionnaire"].includes(method)) {
+      const response = await this.inlineOrNative(request, method as "select" | "confirm" | "input" | "editor" | "questionnaire");
+      client.send({ type: "extension_ui_response", id, ...response });
+      return;
+    }
     if (method === "confirm") {
       const allow = await vscode.window.showWarningMessage(
         [request.title, request.message].filter(Boolean).map(String).join("\n\n"),
@@ -68,6 +85,28 @@ export class ExtensionUiBridge {
     }
 
     client.send({ type: "extension_ui_response", id, cancelled: true });
+  }
+
+  respond(id: string, response: { value?: string; confirmed?: boolean; cancelled?: boolean }): void {
+    const resolve = this.pending.get(id);
+    this.pending.delete(id);
+    resolve?.(response);
+  }
+
+  private async inlineOrNative(request: RpcRecord, method: "select" | "confirm" | "input" | "editor" | "questionnaire"): Promise<{ value?: string; confirmed?: boolean; cancelled?: boolean }> {
+    if (!this.inlineAvailable()) return await this.native(request, method);
+    const id = String(request.id);
+    const inline = new Promise<{ value?: string; confirmed?: boolean; cancelled?: boolean }>((resolve) => this.pending.set(id, resolve));
+    this.post({ type: "extensionUiRequest", id, method: method === "questionnaire" ? "editor" : method, title: String(request.title ?? "Pi needs input"), message: stringValue(request.message), placeholder: stringValue(request.placeholder), prefill: stringValue(request.prefill), options: arrayValue(request.options).map(String).slice(0, 20) });
+    const timeout = typeof request.timeout === "number" ? request.timeout : 120_000;
+    return await Promise.race([inline, new Promise<{ cancelled: true }>((resolve) => setTimeout(() => { this.pending.delete(id); resolve({ cancelled: true }); }, Math.min(timeout, 120_000))) ]);
+  }
+
+  private async native(request: RpcRecord, method: string): Promise<{ value?: string; confirmed?: boolean; cancelled?: boolean }> {
+    if (method === "confirm") return { confirmed: (await vscode.window.showWarningMessage(String(request.title ?? "Confirm"), { modal: true }, "Confirm")) === "Confirm" };
+    if (method === "select") { const value = await vscode.window.showQuickPick(arrayValue(request.options).map(String), { title: String(request.title ?? "Pi needs input") }); return value === undefined ? { cancelled: true } : { value }; }
+    const value = await vscode.window.showInputBox({ title: String(request.title ?? "Pi needs input"), value: stringValue(request.prefill), prompt: stringValue(request.message), ignoreFocusOut: true });
+    return value === undefined ? { cancelled: true } : { value };
   }
 }
 

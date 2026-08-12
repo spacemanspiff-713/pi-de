@@ -6,7 +6,7 @@ A dedicated, independent VS Code development environment powered by the real [Pi
 
 PiDE gives Pi a first-class home in the editor: streaming conversations, native change review, searchable sessions, rich context attachments, and MCP controls—without replacing Pi's runtime or creating a separate configuration silo.
 
-> **Project status:** Early open-source release. v0.3.2 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+> **Project status:** Early open-source release. v0.4.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## Why this project exists
 
@@ -94,6 +94,10 @@ It supports:
 
 Pi continues to own MCP discovery and tool execution.
 
+### Runtime and resource control center
+
+PiDE's control center reports the active Pi binary, version, agent directory, and session directory. It also manages the package list through Pi's own CLI and opens or creates user/project extensions, skills, prompt templates, and agent definitions. Project-local resource changes require an explicit trust warning and restart Pi when necessary.
+
 ### Pi extension UI
 
 Pi extension requests are bridged into VS Code for:
@@ -131,7 +135,7 @@ For Remote SSH, WSL, or development containers, install and configure Pi in that
 - One Pi RPC sidecar is active at a time. The session library can switch, fork, clone, archive, and restore sessions, but simultaneous live session tabs are planned rather than shipped.
 - Native checkpoint review requires a Git worktree. Chat and sessions still work outside Git repositories.
 - The MCP control center expects `pi-mcp-adapter` to be configured through Pi.
-- The resource/package/settings studio and subagent system described in the roadmap are not implemented yet.
+- Inline extension-input widgets, the read-only VS Code bridge, and the subagent system described in the roadmap are not implemented yet.
 - The extension is currently distributed as a locally built VSIX rather than through the Marketplace.
 
 ## Installation
@@ -143,7 +147,7 @@ git clone https://github.com/spacemanspiff-713/pi-de.git
 cd pi-de
 npm install
 npm run package
-code --install-extension pide-0.3.2.vsix --force
+code --install-extension pide-0.4.0.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.
