@@ -5,6 +5,7 @@ import { ChangeReviewController } from "./controllers/changeReviewController";
 import { ExtensionUiBridge } from "./controllers/extensionUiBridge";
 import { McpController } from "./controllers/mcpController";
 import { SessionController } from "./controllers/sessionController";
+import { ResourceController } from "./controllers/resourceController";
 import { contextScore, extractMentions, mentionText, truncateContext } from "./contextMentions";
 import type { RpcRecord } from "./piRpcClient";
 import {
@@ -40,6 +41,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private readonly sessions: SessionController;
   private readonly mcp: McpController;
   private readonly extensionUi: ExtensionUiBridge;
+  private readonly resources: ResourceController;
   private readonly unsubscribeRuntime: () => void;
 
   constructor(
@@ -69,6 +71,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       () => this.refreshCommands(),
     );
     this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp);
+    this.resources = new ResourceController(folder, () => this.runtime.health, () => this.restart(), output);
     this.unsubscribeRuntime = this.runtime.onEvent((event) => void this.handleRuntimeEvent(event));
   }
 
@@ -100,6 +103,10 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   async openSession(): Promise<void> {
     await this.ensureStarted();
     await this.sessions.openLibrary();
+  }
+
+  async openControlCenter(): Promise<void> {
+    await this.resources.open();
   }
 
   async reviewChanges(): Promise<void> {
@@ -342,6 +349,9 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         break;
       case "reloadSession":
         await this.reloadSession();
+        break;
+      case "openResources":
+        await this.resources.open();
         break;
     }
   }
@@ -771,6 +781,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     <div class="brand"><span class="status-dot" id="status-dot"></span><strong>PiDE</strong></div>
     <div class="actions">
       <button id="sessions" title="Session library">◷</button>
+      <button id="resources" title="PiDE control center">⚙</button>
       <button id="compact" title="Compact session context">⇣</button>
       <button id="reload-session" title="Reload session context">↻</button>
       <button id="changes" class="hidden" title="Review changes">Δ</button>

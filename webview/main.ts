@@ -101,6 +101,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   if (typeof persisted.draft === "string") prompt.value = persisted.draft;
 
   document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
+  document.getElementById("resources").addEventListener("click", () => vscode.postMessage({ type: "openResources" }));
   compactButton.addEventListener("click", () => vscode.postMessage({ type: "compactSession" }));
   reloadSessionButton.addEventListener("click", () => vscode.postMessage({ type: "reloadSession" }));
   document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));

@@ -19,6 +19,7 @@ async function activatesAndRegistersCommands(): Promise<void> {
     "pide.openChat",
     "pide.newSession",
     "pide.openSession",
+    "pide.openControlCenter",
     "pide.reviewChanges",
     "pide.abort",
     "pide.restart",

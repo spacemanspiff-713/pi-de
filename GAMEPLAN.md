@@ -231,21 +231,21 @@ Goal: make the current implementation modular enough to support multiple runtime
 
 ### Runtime and resource control center
 
-- [ ] Display Pi version, binary path, agent directory, and session directory.
-- [ ] List configured packages with user/project scope.
-- [ ] Install packages through `pi install`.
-- [ ] Remove packages through `pi remove`.
-- [ ] Update packages through `pi update --extensions`.
-- [ ] List loaded extensions.
-- [ ] List skills and show source/scope.
-- [ ] List prompt templates and show source/scope.
-- [ ] List agent definitions and show source/scope.
-- [ ] Open resource files.
-- [ ] Create, rename, and delete user/project skills.
-- [ ] Create, rename, and delete prompt templates.
-- [ ] Create, rename, and delete agent definitions.
-- [ ] Clearly warn about trusted project-local executable resources.
-- [ ] Restart/reload Pi when resource changes require it.
+- [x] Display Pi version, binary path, agent directory, and session directory.
+- [x] List configured packages with user/project scope.
+- [x] Install packages through `pi install`.
+- [x] Remove packages through `pi remove`.
+- [x] Update packages through `pi update --extensions`.
+- [x] List loaded extensions.
+- [x] List skills and show source/scope.
+- [x] List prompt templates and show source/scope.
+- [x] List agent definitions and show source/scope.
+- [x] Open resource files.
+- [x] Create, rename, and delete user/project skills.
+- [x] Create, rename, and delete prompt templates.
+- [x] Create, rename, and delete agent definitions.
+- [x] Clearly warn about trusted project-local executable resources.
+- [x] Restart/reload Pi when resource changes require it.
 
 ### Read-only VS Code bridge
 

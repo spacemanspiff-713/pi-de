@@ -105,7 +105,8 @@ export type WebviewToHostMessage =
   | { type: "openRuntimeSettings" }
   | { type: "retryRuntime" }
   | { type: "compactSession" }
-  | { type: "reloadSession" };
+  | { type: "reloadSession" }
+  | { type: "openResources" };
 
 export type HostToWebviewMessage =
   | { type: "connection"; status: string; message: string }
@@ -141,7 +142,7 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
   const noData = new Set([
     "ready", "abort", "newSession", "openSession", "restart", "pickModel", "pickThinking",
     "reviewChanges", "openMcpConfig", "showOutput", "manageTrust", "openRuntimeSettings", "retryRuntime",
-    "compactSession", "reloadSession",
+    "compactSession", "reloadSession", "openResources",
   ]);
   if (noData.has(value.type)) return { type: value.type } as WebviewToHostMessage;
   if (["prompt", "copyText", "insertText"].includes(value.type)) {

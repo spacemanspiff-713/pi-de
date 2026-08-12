@@ -84,6 +84,12 @@
         "icon": "$(history)"
       },
       {
+        "command": "pide.openControlCenter",
+        "category": "PiDE",
+        "title": "Open Control Center",
+        "icon": "$(settings-gear)"
+      },
+      {
         "command": "pide.reviewChanges",
         "category": "PiDE",
         "title": "Review Changes",
@@ -120,13 +126,18 @@
           "when": "view == pide.chatView"
         },
         {
-          "command": "pide.reviewChanges",
+          "command": "pide.openControlCenter",
           "group": "navigation@3",
           "when": "view == pide.chatView"
         },
         {
-          "command": "pide.restart",
+          "command": "pide.reviewChanges",
           "group": "navigation@4",
+          "when": "view == pide.chatView"
+        },
+        {
+          "command": "pide.restart",
+          "group": "navigation@5",
           "when": "view == pide.chatView"
         }
       ],

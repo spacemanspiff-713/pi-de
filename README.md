@@ -94,6 +94,10 @@ It supports:
 
 Pi continues to own MCP discovery and tool execution.
 
+### Runtime and resource control center
+
+PiDE's control center reports the active Pi binary, version, agent directory, and session directory. It also manages the package list through Pi's own CLI and opens or creates user/project extensions, skills, prompt templates, and agent definitions. Project-local resource changes require an explicit trust warning and restart Pi when necessary.
+
 ### Pi extension UI
 
 Pi extension requests are bridged into VS Code for:
@@ -131,7 +135,7 @@ For Remote SSH, WSL, or development containers, install and configure Pi in that
 - One Pi RPC sidecar is active at a time. The session library can switch, fork, clone, archive, and restore sessions, but simultaneous live session tabs are planned rather than shipped.
 - Native checkpoint review requires a Git worktree. Chat and sessions still work outside Git repositories.
 - The MCP control center expects `pi-mcp-adapter` to be configured through Pi.
-- The resource/package/settings studio and subagent system described in the roadmap are not implemented yet.
+- Inline extension-input widgets, the read-only VS Code bridge, and the subagent system described in the roadmap are not implemented yet.
 - The extension is currently distributed as a locally built VSIX rather than through the Marketplace.
 
 ## Installation
