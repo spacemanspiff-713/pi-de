@@ -373,7 +373,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         await vscode.commands.executeCommand("workbench.trust.manage");
         break;
       case "openRuntimeSettings":
-        await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pidaddylabs.pide");
+        await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:spacemanspiff-713.pide");
         break;
       case "retryRuntime":
         await this.restart();

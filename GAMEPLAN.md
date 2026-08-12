@@ -47,7 +47,7 @@ The extension should eventually provide:
 - [x] Added VS Code development launch/tasks configuration.
 - [x] Added VSIX packaging and local installation workflow.
 - [x] Added a dedicated PiDE Activity Bar container and icon.
-- [x] Packaged and installed v0.3.0 as `pidaddylabs.pide`.
+- [x] Packaged and installed v0.3.0 as `spacemanspiff-713.pide`.
 - [x] Packaged, Extension Host-tested, and locally installed the Phase 0 hardening release v0.3.1.
 - [x] Renamed the product and extension to **PiDE** (Pi Development Environment), using `assets/PiDE.jpg` for its package, repository, and Activity Bar image.
 
@@ -171,7 +171,7 @@ The extension should eventually provide:
 ### Current release snapshot
 
 - Version: `0.6.0`
-- Extension ID: `pidaddylabs.pide`
+- Extension ID: `spacemanspiff-713.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
 - Tests at v0.3.2: 17 Vitest tests plus 3 Extension Host integration checks

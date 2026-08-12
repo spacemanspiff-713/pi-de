@@ -156,10 +156,10 @@ code --install-extension pide-0.6.0.vsix --force
 
 Then run **Developer: Reload Window** in VS Code.
 
-> **Upgrading from the pre-PiDE build?** The extension identifier changed from `pidaddylabs.pi-vscode` to `pidaddylabs.pide`. Remove the legacy local extension before installing PiDE so only one Pi sidecar can start:
+> **Upgrading from the pre-PiDE build?** The extension identifier changed from `spacemanspiff-713.pi-vscode` to `spacemanspiff-713.pide`. Remove the legacy local extension before installing PiDE so only one Pi sidecar can start:
 >
 > ```bash
-> code --uninstall-extension pidaddylabs.pi-vscode
+> code --uninstall-extension spacemanspiff-713.pi-vscode
 > ```
 
 Alternatively, press `F5` from the repository to launch an Extension Development Host.

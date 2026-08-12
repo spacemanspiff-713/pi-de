@@ -9,7 +9,7 @@ export async function run(): Promise<void> {
 }
 
 async function activatesAndRegistersCommands(): Promise<void> {
-  const extension = vscode.extensions.getExtension("pidaddylabs.pide");
+  const extension = vscode.extensions.getExtension("spacemanspiff-713.pide");
   assert.ok(extension, "The PiDE extension should be present in the development host");
   await extension.activate();
   assert.equal(extension.isActive, true);
@@ -46,7 +46,7 @@ function declaresPiDEBranding(): void {
 }
 
 function manifestForPiDE(): Record<string, any> {
-  const extension = vscode.extensions.getExtension("pidaddylabs.pide");
+  const extension = vscode.extensions.getExtension("spacemanspiff-713.pide");
   assert.ok(extension, "The PiDE extension should be present in the development host");
   return extension.packageJSON as Record<string, any>;
 }

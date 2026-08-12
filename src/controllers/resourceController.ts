@@ -54,7 +54,7 @@ export class ResourceController {
     this.output.appendLine(`[PiDE runtime]\n${lines.join("\n")}`);
     const action = await vscode.window.showInformationMessage(lines.join("\n"), "Show Output", "Open Settings");
     if (action === "Show Output") this.output.show(true);
-    if (action === "Open Settings") await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:pidaddylabs.pide");
+    if (action === "Open Settings") await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:spacemanspiff-713.pide");
   }
 
   private async managePackages(): Promise<void> {
