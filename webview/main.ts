@@ -51,6 +51,9 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const statusDot = document.getElementById("status-dot");
   const modelButton = document.getElementById("model");
   const thinkingButton = document.getElementById("thinking");
+  const sessionStats = document.getElementById("session-stats");
+  const compactButton = document.getElementById("compact") as HTMLButtonElement;
+  const reloadSessionButton = document.getElementById("reload-session") as HTMLButtonElement;
   const sendButton = document.getElementById("send") as HTMLButtonElement;
   const stopButton = document.getElementById("stop") as HTMLButtonElement;
   const attachButton = document.getElementById("attach") as HTMLButtonElement;
@@ -98,6 +101,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
   if (typeof persisted.draft === "string") prompt.value = persisted.draft;
 
   document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
+  compactButton.addEventListener("click", () => vscode.postMessage({ type: "compactSession" }));
+  reloadSessionButton.addEventListener("click", () => vscode.postMessage({ type: "reloadSession" }));
   document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
   document.getElementById("restart").addEventListener("click", () => vscode.postMessage({ type: "restart" }));
   document.getElementById("output").addEventListener("click", () => vscode.postMessage({ type: "showOutput" }));
@@ -191,6 +196,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
         if (data.requestId === latestContextRequest) renderContextMenu(data.items || []);
         break;
       case "state": updateState(data); break;
+      case "sessionStats": renderSessionStats(data.stats); break;
       case "clear":
         transcript.textContent = "";
         tools.clear();
@@ -281,7 +287,25 @@ markdown.renderer.rules.fence = (tokens, index) => {
     modelButton.textContent = model.name || model.id || "Select model";
     modelButton.title = model.provider && model.id ? `${model.provider}/${model.id}` : "Select Pi model";
     thinkingButton.textContent = `thinking: ${state.thinkingLevel || "off"}`;
+    const maintenance = state.isCompacting ? "Compacting…" : state.isRetrying ? "Retrying…" : "";
+    compactButton.disabled = Boolean(state.isStreaming || state.isCompacting);
+    reloadSessionButton.disabled = Boolean(state.isStreaming || state.isCompacting);
+    compactButton.title = maintenance || "Compact session context";
+    reloadSessionButton.title = maintenance || "Reload session context";
     setBusy(Boolean(state.isStreaming));
+  }
+
+  function renderSessionStats(stats) {
+    const usage = stats?.contextUsage || {};
+    const percent = typeof usage.percent === "number" ? `${Math.round(usage.percent)}%` : "—";
+    const tokens = typeof usage.tokens === "number" ? formatCount(usage.tokens) : "unknown";
+    const windowSize = typeof usage.contextWindow === "number" ? formatCount(usage.contextWindow) : "unknown";
+    sessionStats.textContent = `context: ${percent}`;
+    sessionStats.title = `Context window: ${tokens} / ${windowSize}${typeof stats?.cost === "number" ? ` · session cost $${stats.cost.toFixed(4)}` : ""}`;
+  }
+
+  function formatCount(value) {
+    return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : String(value);
   }
 
   function setBusy(value) {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
 
 const shell = `<!doctype html><html><body>
-  <span id="status-dot"></span><button id="model"></button><button id="thinking"></button>
+  <span id="status-dot"></span><button id="model"></button><button id="thinking"></button><span id="session-stats"></span>
   <div id="banner"></div>
   <section id="runtime-health"><strong id="runtime-health-title"></strong><p id="runtime-health-message"></p><div id="runtime-health-details"></div><button id="runtime-trust"></button><button id="runtime-settings"></button><button id="runtime-retry"></button></section>
   <div id="widget"></div><div id="change-summary"></div><main id="transcript"></main>
@@ -12,7 +12,7 @@ const shell = `<!doctype html><html><body>
   <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
   <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>
   <div id="context-chips"></div><textarea id="prompt"></textarea>
-  <button id="sessions"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
+  <button id="sessions"></button><button id="compact"></button><button id="reload-session"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
   <button id="mcp-reconnect-all"></button><button id="mcp-config"></button>
   <button id="attach"></button><button id="stop"></button><button id="send"></button>
   <span id="queue"></span><div id="command-menu"></div><div id="context-menu"></div>
@@ -106,6 +106,13 @@ describe("bundled Pi webview", () => {
     }));
     expect(document.querySelector("#mcp-totals")?.textContent).toContain("1/1 connected");
     expect(document.querySelector("#mcp-list")?.textContent).toContain("docs");
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { type: "sessionStats", stats: { cost: 0.1234, contextUsage: { tokens: 60_000, contextWindow: 200_000, percent: 30 } } },
+    }));
+    expect(document.querySelector("#session-stats")?.textContent).toContain("30%");
+    (document.querySelector("#compact") as HTMLButtonElement | null)?.click();
+    expect(posted.some((message) => message.type === "compactSession")).toBe(true);
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     dom.window.close();

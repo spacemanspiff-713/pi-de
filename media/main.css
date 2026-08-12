@@ -67,6 +67,12 @@ button { color: inherit; }
 }
 .selector:first-child { flex: 1; color: inherit; }
 .selector:hover { background: var(--vscode-toolbar-hoverBackground); }
+.session-stats {
+  align-self: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  white-space: nowrap;
+}
 
 .banner, .widget {
   margin: 8px var(--pad) 0;

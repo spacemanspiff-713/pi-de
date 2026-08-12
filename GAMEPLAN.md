@@ -216,16 +216,16 @@ Goal: make the current implementation modular enough to support multiple runtime
 
 ### Session improvements
 
-- [ ] Pin and favorite sessions.
-- [ ] Copy session ID.
-- [ ] Copy/open session path.
-- [ ] Export a session to HTML using `pi --export`.
-- [ ] Show context-window usage.
-- [ ] Add compact-session action.
-- [ ] Add reload-context action.
-- [ ] Show auto-compaction and auto-retry state.
+- [x] Pin and favorite sessions.
+- [x] Copy session ID.
+- [x] Copy/open session path.
+- [x] Export a session to HTML (active sessions use RPC; inactive sessions use `pi --export`).
+- [x] Show context-window usage.
+- [x] Add compact-session action.
+- [x] Add reload-context action.
+- [x] Show auto-compaction and auto-retry state.
 - [ ] Add running/idle/unread badges.
-- [ ] Persist session filters and sorting.
+- [x] Persist session filters and sorting.
 - [ ] Improve automatic session display names.
 - [ ] Add “Open in Pi terminal.”
 

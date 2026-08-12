@@ -1,4 +1,7 @@
 import { existsSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { basename } from "node:path";
+import { promisify } from "node:util";
 import * as vscode from "vscode";
 import type { PiState } from "../protocol";
 import { truncateContext } from "../contextMentions";
@@ -12,6 +15,16 @@ interface StoredSession {
   name?: string;
   updatedAt: number;
 }
+
+type SessionSort = "recent" | "name" | "cost";
+
+interface SessionPreferences {
+  pinned: string[];
+  favorites: string[];
+  sort: SessionSort;
+}
+
+const execFileAsync = promisify(execFile);
 
 export interface SessionControllerDependencies {
   context: vscode.ExtensionContext;
@@ -67,8 +80,9 @@ export class SessionController {
       void vscode.window.showInformationMessage("No Pi CLI sessions were found for this workspace.");
       return;
     }
-    const selection = await this.pickSessionAction(sessions);
-    if (selection) await this.handleAction(selection.session, selection.action);
+    const preferences = this.sessionPreferences(folder.uri);
+    const selection = await this.pickSessionAction(sessions, preferences, folder.uri);
+    if (selection) await this.handleAction(selection.session, selection.action, folder.uri);
   }
 
   async newSession(): Promise<void> {
@@ -89,7 +103,32 @@ export class SessionController {
     await this.dependencies.refresh();
   }
 
-  private async handleAction(session: SessionSummary, action: string): Promise<void> {
+  private async handleAction(session: SessionSummary, action: string, workspaceUri: vscode.Uri): Promise<void> {
+    if (action === "pin" || action === "favorite") {
+      const preferences = this.sessionPreferences(workspaceUri);
+      const key = action === "pin" ? "pinned" : "favorites";
+      preferences[key] = toggle(preferences[key], session.file);
+      await this.saveSessionPreferences(workspaceUri, preferences);
+      return;
+    }
+    if (action === "copy id") {
+      await vscode.env.clipboard.writeText(session.id);
+      void vscode.window.showInformationMessage("Pi session ID copied.");
+      return;
+    }
+    if (action === "copy path") {
+      await vscode.env.clipboard.writeText(session.file);
+      void vscode.window.showInformationMessage("Pi session path copied.");
+      return;
+    }
+    if (action === "open file") {
+      await vscode.window.showTextDocument(vscode.Uri.file(session.file), { preview: true });
+      return;
+    }
+    if (action === "export html") {
+      await this.exportSession(session);
+      return;
+    }
     if (action === "resume") {
       await this.switchTo(session.file);
       return;
@@ -196,7 +235,11 @@ export class SessionController {
     }
   }
 
-  private async pickSessionAction(sessions: SessionSummary[]): Promise<{ session: SessionSummary; action: string } | undefined> {
+  private async pickSessionAction(
+    sessions: SessionSummary[],
+    preferences: SessionPreferences,
+    workspaceUri: vscode.Uri,
+  ): Promise<{ session: SessionSummary; action: string } | undefined> {
     interface SessionItem extends vscode.QuickPickItem { session: SessionSummary }
     const buttons = {
       rename: { iconPath: new vscode.ThemeIcon("edit"), tooltip: "Rename" },
@@ -204,11 +247,18 @@ export class SessionController {
       clone: { iconPath: new vscode.ThemeIcon("copy"), tooltip: "Clone" },
       archive: { iconPath: new vscode.ThemeIcon("archive"), tooltip: "Archive" },
       restore: { iconPath: new vscode.ThemeIcon("unarchive"), tooltip: "Restore" },
+      pin: { iconPath: new vscode.ThemeIcon("pin"), tooltip: "Pin" },
+      favorite: { iconPath: new vscode.ThemeIcon("star-full"), tooltip: "Favorite" },
+      copyId: { iconPath: new vscode.ThemeIcon("key"), tooltip: "Copy ID" },
+      copyPath: { iconPath: new vscode.ThemeIcon("copy"), tooltip: "Copy Path" },
+      openFile: { iconPath: new vscode.ThemeIcon("go-to-file"), tooltip: "Open File" },
+      exportHtml: { iconPath: new vscode.ThemeIcon("export"), tooltip: "Export HTML" },
       delete: { iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete" },
     } satisfies Record<string, vscode.QuickInputButton>;
     const picker = vscode.window.createQuickPick<SessionItem>();
     picker.title = "Pi Session Library";
     picker.placeholder = "Search names, prompts, models, or session IDs";
+    picker.buttons = [{ iconPath: new vscode.ThemeIcon("list-ordered"), tooltip: "Change session sort" }];
     picker.matchOnDescription = true;
     picker.matchOnDetail = true;
     const buildItems = (query = ""): SessionItem[] => {
@@ -217,8 +267,8 @@ export class SessionController {
         if (!terms.length) return true;
         const haystack = `${session.name ?? ""}\n${session.id}\n${session.model ?? ""}\n${session.searchText}`.toLowerCase();
         return terms.every((term) => haystack.includes(term));
-      }).map((session) => ({
-        label: session.name || firstLine(session.preview) || `Pi session ${shortId(session.id)}`,
+      }).sort((a, b) => compareSessions(a, b, preferences)).map((session) => ({
+        label: `${preferences.pinned.includes(session.file) ? "$(pin) " : ""}${preferences.favorites.includes(session.file) ? "$(star-full) " : ""}${session.name || firstLine(session.preview) || `Pi session ${shortId(session.id)}`}`,
         description: [
           session.file === this.dependencies.state().sessionFile
             ? "$(circle-filled) Current"
@@ -226,13 +276,17 @@ export class SessionController {
           session.model,
         ].filter(Boolean).join(" · "),
         detail: `${session.preview.replace(/\n/g, " ")}  —  ${session.messageCount} messages · ${formatTokens(session.tokens)} tokens · $${session.cost.toFixed(4)}`,
-        buttons: [buttons.rename, buttons.fork, buttons.clone, session.archived ? buttons.restore : buttons.archive, buttons.delete],
+        buttons: [buttons.pin, buttons.favorite, buttons.rename, buttons.fork, buttons.clone, buttons.copyId, buttons.copyPath, buttons.openFile, buttons.exportHtml, session.archived ? buttons.restore : buttons.archive, buttons.delete],
         alwaysShow: true,
         session,
       }));
     };
-    picker.items = buildItems();
-    picker.onDidChangeValue((value) => { picker.items = buildItems(value); });
+    picker.value = this.dependencies.context.workspaceState.get<string>(this.sessionFilterStorageKey(workspaceUri), "");
+    picker.items = buildItems(picker.value);
+    picker.onDidChangeValue((value) => {
+      void this.dependencies.context.workspaceState.update(this.sessionFilterStorageKey(workspaceUri), value);
+      picker.items = buildItems(value);
+    });
 
     return await new Promise((resolvePromise) => {
       let settled = false;
@@ -250,17 +304,67 @@ export class SessionController {
       picker.onDidTriggerItemButton(({ item, button }) => {
         finish({ session: item.session, action: button.tooltip?.toLowerCase() ?? "resume" });
       });
+      picker.onDidTriggerButton(async () => {
+        const selected = await vscode.window.showQuickPick([
+          { label: "Most recent", value: "recent" },
+          { label: "Name", value: "name" },
+          { label: "Cost", value: "cost" },
+        ], { title: "Sort Pi sessions" });
+        if (!selected) return;
+        preferences.sort = selected.value as SessionSort;
+        await this.saveSessionPreferences(workspaceUri, preferences);
+        picker.items = buildItems(picker.value);
+      });
       picker.onDidHide(() => finish());
       picker.show();
     });
   }
 
+  private async exportSession(session: SessionSummary): Promise<void> {
+    const destination = await vscode.window.showSaveDialog({
+      title: "Export Pi session to HTML",
+      defaultUri: vscode.Uri.file(`${session.file.replace(/\.jsonl$/i, "")}.html`),
+      filters: { HTML: ["html"] },
+    });
+    if (!destination) return;
+    const active = session.file === this.dependencies.state().sessionFile ? this.dependencies.client() : undefined;
+    if (active?.running) {
+      await active.request({ type: "export_html", outputPath: destination.fsPath }, 120_000);
+    } else {
+      const configured = vscode.workspace.getConfiguration("pide").get<string>("executablePath", "pi");
+      const executable = await resolvePiExecutable({ configured });
+      await execFileAsync(executable, ["--export", session.file, destination.fsPath], { timeout: 120_000, maxBuffer: 1024 * 1024 });
+    }
+    void vscode.window.showInformationMessage(`Exported ${basename(destination.fsPath)}.`);
+  }
+
+  private sessionPreferences(uri: vscode.Uri): SessionPreferences {
+    const value = this.dependencies.context.workspaceState.get<Partial<SessionPreferences>>(this.sessionPreferencesStorageKey(uri), {});
+    return {
+      pinned: Array.isArray(value.pinned) ? value.pinned.filter((path): path is string => typeof path === "string") : [],
+      favorites: Array.isArray(value.favorites) ? value.favorites.filter((path): path is string => typeof path === "string") : [],
+      sort: value.sort === "name" || value.sort === "cost" ? value.sort : "recent",
+    };
+  }
+
+  private async saveSessionPreferences(uri: vscode.Uri, preferences: SessionPreferences): Promise<void> {
+    await this.dependencies.context.workspaceState.update(this.sessionPreferencesStorageKey(uri), preferences);
+  }
+
   private sessionStorageKey(uri: vscode.Uri): string {
-    return `pi.sessionFile:${uri.toString()}`;
+    return `pide.sessionFile:${uri.toString()}`;
   }
 
   private sessionsStorageKey(uri: vscode.Uri): string {
-    return `pi.sessions:${uri.toString()}`;
+    return `pide.sessions:${uri.toString()}`;
+  }
+
+  private sessionPreferencesStorageKey(uri: vscode.Uri): string {
+    return `pide.sessionPreferences:${uri.toString()}`;
+  }
+
+  private sessionFilterStorageKey(uri: vscode.Uri): string {
+    return `pide.sessionFilter:${uri.toString()}`;
   }
 }
 
@@ -294,4 +398,18 @@ function relativeTime(timestamp: number): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function toggle(items: string[], value: string): string[] {
+  return items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
+}
+
+function compareSessions(a: SessionSummary, b: SessionSummary, preferences: SessionPreferences): number {
+  const pin = Number(preferences.pinned.includes(b.file)) - Number(preferences.pinned.includes(a.file));
+  if (pin) return pin;
+  const favorite = Number(preferences.favorites.includes(b.file)) - Number(preferences.favorites.includes(a.file));
+  if (favorite) return favorite;
+  if (preferences.sort === "name") return (a.name || a.preview).localeCompare(b.name || b.preview);
+  if (preferences.sort === "cost") return b.cost - a.cost || b.updatedAt - a.updatedAt;
+  return b.updatedAt - a.updatedAt;
 }

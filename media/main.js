@@ -20998,6 +20998,9 @@
     const statusDot = document.getElementById("status-dot");
     const modelButton = document.getElementById("model");
     const thinkingButton = document.getElementById("thinking");
+    const sessionStats = document.getElementById("session-stats");
+    const compactButton = document.getElementById("compact");
+    const reloadSessionButton = document.getElementById("reload-session");
     const sendButton = document.getElementById("send");
     const stopButton = document.getElementById("stop");
     const attachButton = document.getElementById("attach");
@@ -21036,6 +21039,8 @@
     const persisted = vscode.getState() || {};
     if (typeof persisted.draft === "string") prompt.value = persisted.draft;
     document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
+    compactButton.addEventListener("click", () => vscode.postMessage({ type: "compactSession" }));
+    reloadSessionButton.addEventListener("click", () => vscode.postMessage({ type: "reloadSession" }));
     document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
     document.getElementById("restart").addEventListener("click", () => vscode.postMessage({ type: "restart" }));
     document.getElementById("output").addEventListener("click", () => vscode.postMessage({ type: "showOutput" }));
@@ -21137,6 +21142,9 @@
           break;
         case "state":
           updateState(data);
+          break;
+        case "sessionStats":
+          renderSessionStats(data.stats);
           break;
         case "clear":
           transcript.textContent = "";
@@ -21250,7 +21258,23 @@
       modelButton.textContent = model.name || model.id || "Select model";
       modelButton.title = model.provider && model.id ? `${model.provider}/${model.id}` : "Select Pi model";
       thinkingButton.textContent = `thinking: ${state.thinkingLevel || "off"}`;
+      const maintenance = state.isCompacting ? "Compacting\u2026" : state.isRetrying ? "Retrying\u2026" : "";
+      compactButton.disabled = Boolean(state.isStreaming || state.isCompacting);
+      reloadSessionButton.disabled = Boolean(state.isStreaming || state.isCompacting);
+      compactButton.title = maintenance || "Compact session context";
+      reloadSessionButton.title = maintenance || "Reload session context";
       setBusy(Boolean(state.isStreaming));
+    }
+    function renderSessionStats(stats) {
+      const usage = stats?.contextUsage || {};
+      const percent = typeof usage.percent === "number" ? `${Math.round(usage.percent)}%` : "\u2014";
+      const tokens = typeof usage.tokens === "number" ? formatCount(usage.tokens) : "unknown";
+      const windowSize = typeof usage.contextWindow === "number" ? formatCount(usage.contextWindow) : "unknown";
+      sessionStats.textContent = `context: ${percent}`;
+      sessionStats.title = `Context window: ${tokens} / ${windowSize}${typeof stats?.cost === "number" ? ` \xB7 session cost $${stats.cost.toFixed(4)}` : ""}`;
+    }
+    function formatCount(value) {
+      return value >= 1e6 ? `${(value / 1e6).toFixed(1)}M` : value >= 1e3 ? `${(value / 1e3).toFixed(1)}K` : String(value);
     }
     function setBusy(value) {
       stopButton.classList.toggle("hidden", !value);
