@@ -6,7 +6,7 @@ A dedicated, independent VS Code development environment powered by the real [Pi
 
 PiDE gives Pi a first-class home in the editor: streaming conversations, native change review, searchable sessions, rich context attachments, and MCP controls—without replacing Pi's runtime or creating a separate configuration silo.
 
-> **Vibe coded with Pi, for Pi.** Every commit in this repo was produced by a Pi coding agent working inside its own PiDE interface. The primary model was `openrouter/deepseek/deepseek-v4-pro` with thinking on high, assisted by local `gemma-4-26b-a4b` and `gemma-4-12b` for faster iteration, plus `openai-codex/gpt-5.4` for architecture review. Pi literally built its own home.
+> **Vibe coded with Pi, for Pi.** Every commit in this repo was produced by a Pi coding agent working inside its own PiDE interface. The primary model was `openai-codex/gpt-5.5` with thinking on medium, assisted by `openrouter/deepseek/deepseek-v4-pro` & local `gemma-4-26b-a4b` for faster iteration. Also used `openai-codex/gpt-5.6 Terra ` for architecture review and planning. Pi literally built its own home.
 
 > **Project status:** Early open-source release. v0.6.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
