@@ -1,6 +1,6 @@
 import type { ChangeSet } from "./changeReview";
-import type { AgentRole, AgentRunSnapshot } from "./controllers/agentLabController";
-export type { AgentRole, AgentRunSnapshot } from "./controllers/agentLabController";
+import type { AgentRole, AgentRunSnapshot, AgentTeam } from "./controllers/agentLabController";
+export type { AgentRole, AgentRunSnapshot, AgentTeam } from "./controllers/agentLabController";
 
 export interface PiModelState {
   id?: string;
@@ -144,7 +144,7 @@ export type HostToWebviewMessage =
   | ({ type: "state" } & PiState)
   | { type: "sessionStats"; stats: SessionStats }
   | { type: "sessionTabs"; tabs: SessionTabState[] }
-  | { type: "agentLab"; roles: AgentRole[]; runs: AgentRunSnapshot[]; maxConcurrent: number }
+  | { type: "agentLab"; roles: AgentRole[]; teams?: AgentTeam[]; runs: AgentRunSnapshot[]; maxConcurrent: number }
   | { type: "showAgentLab" }
   | { type: "clear" }
   | { type: "userPrompt"; text: string }

@@ -9,6 +9,8 @@ import { agentAfterContent, agentBeforeContent, applyAgentPatch, captureAgentCha
 import type { ChangedFile } from "../changeReview";
 import { boundedToolArgs, extractAgentSources, toolResultText, type AgentSource } from "../agentArtifacts";
 export type { AgentSource } from "../agentArtifacts";
+import { builtinTeams, mergeTeams, parseTeamMarkdown, type AgentTeam } from "../agentTeams";
+export type { AgentTeam } from "../agentTeams";
 
 export interface AgentRole {
   id: string;
@@ -68,6 +70,7 @@ export class AgentLabController implements vscode.Disposable {
   private queue: QueueItem[] = [];
   private active = 0;
   private rolesCache?: AgentRole[];
+  private teamsCache?: AgentTeam[];
   private disposed = false;
 
   constructor(
@@ -78,7 +81,7 @@ export class AgentLabController implements vscode.Disposable {
   ) {}
 
   async open(): Promise<void> {
-    this.post({ type: "agentLab", roles: await this.discoverRoles(), runs: this.snapshots(), maxConcurrent: this.maxConcurrent() });
+    this.post({ type: "agentLab", roles: await this.discoverRoles(), teams: await this.discoverTeams(), runs: this.snapshots(), maxConcurrent: this.maxConcurrent() });
   }
 
   async restore(): Promise<void> {
@@ -97,6 +100,7 @@ export class AgentLabController implements vscode.Disposable {
 
   async refresh(): Promise<void> {
     this.rolesCache = undefined;
+    this.teamsCache = undefined;
     await this.open();
   }
 
@@ -252,6 +256,17 @@ export class AgentLabController implements vscode.Disposable {
   async dispose(): Promise<void> {
     this.disposed = true;
     await this.stop();
+  }
+
+  async discoverTeams(): Promise<AgentTeam[]> {
+    if (this.teamsCache) return this.teamsCache;
+    const folder = this.workspaceFolder();
+    this.teamsCache = mergeTeams([
+      ...builtinTeams(),
+      ...await readTeamDir(join(homedir(), ".pi", "agent", "teams"), "user"),
+      ...await readTeamDir(folder ? join(folder.uri.fsPath, ".pi", "teams") : "", "project"),
+    ]);
+    return this.teamsCache;
   }
 
   async discoverRoles(): Promise<AgentRole[]> {
@@ -460,6 +475,14 @@ async function readRoleDir(dir: string, source: "user" | "project"): Promise<Age
   try {
     const files = (await readdir(dir)).filter((file) => file.endsWith(".md"));
     return (await Promise.all(files.map(async (file) => parseRole(join(dir, file), source)))).filter((role): role is AgentRole => Boolean(role));
+  } catch { return []; }
+}
+
+async function readTeamDir(dir: string, source: "user" | "project"): Promise<AgentTeam[]> {
+  if (!dir) return [];
+  try {
+    const files = (await readdir(dir)).filter((file) => file.endsWith(".md"));
+    return (await Promise.all(files.map(async (file) => parseTeamMarkdown(await readFile(join(dir, file), "utf8").catch(() => ""), source, join(dir, file))))).filter((team): team is AgentTeam => Boolean(team));
   } catch { return []; }
 }
 
