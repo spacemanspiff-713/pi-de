@@ -362,7 +362,7 @@ Near-term work includes:
 5. Read-only research agents and Git-worktree-isolated coding agents
 6. Git-worktree-isolated coding agents with native diff review
 
-The detailed checklist is maintained in [GAMEPLAN.md](GAMEPLAN.md). Third-party design references and dependency notices are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The detailed checklist is maintained in [GAMEPLAN.md](GAMEPLAN.md). Phase 5B chat-window/swarm-board UI discovery is documented in [UI.md](UI.md). Third-party design references and dependency notices are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Inspiration and attribution
 

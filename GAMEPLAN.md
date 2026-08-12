@@ -370,6 +370,18 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Over-budget or disallowed tool use is visible and aborts the run.
 - [x] Tool behavior is explainable from the run card without opening raw JSONL.
 
+## Phase 5B — Chat Window UI/UX Improvements discovery — documented in UI.md
+
+- [x] Re-read current PiDE webview DOM/layout and Agent Lab rendering structure.
+- [x] Re-ground design in official VS Code Webview API, UX Guidelines, Webviews UX Guidelines, and Theme Color docs.
+- [x] Convert the Researcher agent findings into a concrete chat-window/swarm-board product direction.
+- [x] Map current UI weaknesses: icon-only topbar, hidden drawers, disconnected agent output, no global swarm strip, no artifact inspector, weak citation/source surface.
+- [x] Propose an agent swarm management board information architecture.
+- [x] Define board regions: command bar, swarm strip, commander transcript, agent lanes/run cards, artifact inspector, dispatch console.
+- [x] Define styling, accessibility, theming, and stable-API constraints.
+- [x] Split the implementation plan into 5B.1–5B.6 with 5B.1/5B.2 as the recommended first build slice.
+- [x] Record open product questions and non-goals.
+
 ## Phase 5 — advanced studio backlog
 
 - [ ] Package marketplace search.
