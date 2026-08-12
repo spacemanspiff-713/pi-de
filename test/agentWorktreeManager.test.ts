@@ -3,7 +3,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { agentAfterContent, agentBeforeContent, applyAgentPatch, captureAgentChanges, createAgentPatch, createAgentWorktree, removeAgentWorktree } from "../src/controllers/agentWorktreeManager";
+import { agentAfterContent, agentBeforeContent, applyAgentPatch, captureAgentChanges, commitAgentWorktree, createAgentPatch, createAgentWorktree, mergeAgentBranch, removeAgentWorktree } from "../src/controllers/agentWorktreeManager";
 
 const git = (cwd: string, args: string[]) => new Promise<void>((resolve, reject) => execFile("git", ["-C", cwd, ...args], (error, _stdout, stderr) => error ? reject(new Error(stderr)) : resolve()));
 
@@ -30,6 +30,11 @@ describe("AgentWorktreeManager", () => {
     await applyAgentPatch(root, await createAgentPatch(worktree, ["hello.txt"]));
     expect(await readFile(join(root, "hello.txt"), "utf8")).toBe("after\n");
     await expect(readFile(join(root, "new.txt"), "utf8")).rejects.toThrow();
+
+    await git(root, ["reset", "--hard", "HEAD"]);
+    expect(await commitAgentWorktree(worktree)).toBe(true);
+    await mergeAgentBranch(worktree);
+    expect(await readFile(join(root, "new.txt"), "utf8")).toBe("new\n");
 
     await removeAgentWorktree(worktree, true);
   });
