@@ -21017,6 +21017,11 @@
     const changesPanel = document.getElementById("changes-panel");
     const changesTotals = document.getElementById("changes-totals");
     const changesList = document.getElementById("changes-list");
+    const agentLabPanel = document.getElementById("agent-lab-panel");
+    const agentLabSummary = document.getElementById("agent-lab-summary");
+    const agentLabTask = document.getElementById("agent-lab-task");
+    const agentLabRoles = document.getElementById("agent-lab-roles");
+    const agentLabRuns = document.getElementById("agent-lab-runs");
     const mcpPanel = document.getElementById("mcp-panel");
     const mcpTotals = document.getElementById("mcp-totals");
     const mcpList = document.getElementById("mcp-list");
@@ -21033,6 +21038,8 @@
     let contextSearchTimer;
     let latestChangeSet;
     let latestMcpStatus;
+    let latestAgentRoles = [];
+    let latestAgentRuns = [];
     let latestMcpPrompts = [];
     let renderFrame;
     const tools = /* @__PURE__ */ new Map();
@@ -21042,6 +21049,7 @@
     if (typeof persisted.draft === "string") prompt.value = persisted.draft;
     document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
     document.getElementById("resources").addEventListener("click", () => vscode.postMessage({ type: "openResources" }));
+    document.getElementById("agent-lab").addEventListener("click", () => vscode.postMessage({ type: "openAgentLab" }));
     compactButton.addEventListener("click", () => vscode.postMessage({ type: "compactSession" }));
     reloadSessionButton.addEventListener("click", () => vscode.postMessage({ type: "reloadSession" }));
     document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
@@ -21052,6 +21060,9 @@
       else vscode.postMessage({ type: "reviewChanges" });
     });
     document.getElementById("mcp").addEventListener("click", () => showPanel(mcpPanel));
+    document.getElementById("agent-lab-run").addEventListener("click", () => runAgentLab());
+    document.getElementById("agent-lab-stop").addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab" }));
+    document.getElementById("agent-lab-refresh").addEventListener("click", () => vscode.postMessage({ type: "refreshAgentLab" }));
     document.getElementById("mcp-reconnect-all").addEventListener("click", () => vscode.postMessage({ type: "mcpAction", action: "reconnect" }));
     document.getElementById("mcp-config").addEventListener("click", () => vscode.postMessage({ type: "openMcpConfig" }));
     runtimeTrustButton.addEventListener("click", () => vscode.postMessage({ type: "manageTrust" }));
@@ -21154,6 +21165,10 @@
           break;
         case "sessionTabs":
           renderSessionTabs(data.tabs || []);
+          break;
+        case "agentLab":
+          renderAgentLab(data.roles || [], data.runs || [], data.maxConcurrent || 4);
+          showPanel(agentLabPanel);
           break;
         case "clear":
           transcript.textContent = "";
@@ -21261,6 +21276,43 @@
       statusDot.className = `status-dot ${status || ""}`;
       banner.textContent = message || "";
       banner.classList.toggle("hidden", status === "ready");
+    }
+    function runAgentLab() {
+      const roleIds = Array.from(agentLabRoles.querySelectorAll("input[type=checkbox]:checked")).map((input) => input.value);
+      vscode.postMessage({ type: "runAgentLab", roleIds, task: agentLabTask.value });
+    }
+    function renderAgentLab(roles, runs, maxConcurrent) {
+      latestAgentRoles = roles;
+      latestAgentRuns = runs;
+      agentLabSummary.textContent = `${roles.length} roles \xB7 ${runs.filter((run) => ["queued", "starting", "running"].includes(run.status)).length}/${maxConcurrent} active or queued \xB7 read-only MVP`;
+      agentLabRoles.textContent = "";
+      for (const role of roles) {
+        const label = document.createElement("label");
+        label.className = "agent-role";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = role.id;
+        input.checked = ["architect", "explorer", "reviewer"].includes(role.id);
+        const body = document.createElement("span");
+        body.innerHTML = `<strong>${escapeHtml2(role.name)}</strong><small>${escapeHtml2(role.source)} \xB7 ${escapeHtml2(role.description || "")}</small>`;
+        label.append(input, body);
+        agentLabRoles.append(label);
+      }
+      agentLabRuns.textContent = "";
+      for (const run of runs) {
+        const item = document.createElement("article");
+        item.className = `agent-run ${run.status}`;
+        const resultHtml = run.result ? purify.sanitize(markdown.render(run.result)) : "";
+        item.innerHTML = `<header><strong>${escapeHtml2(run.roleName)}</strong><span>${escapeHtml2(run.status)}</span></header>
+        <div class="agent-progress">${escapeHtml2(run.progress || "")}${run.durationMs ? ` \xB7 ${Math.round(run.durationMs / 1e3)}s` : ""}</div>
+        ${run.error ? `<div class="agent-error">${escapeHtml2(run.error)}</div>` : ""}
+        ${run.toolEvents?.length ? `<div class="agent-tools">${run.toolEvents.slice(-8).map((tool) => escapeHtml2(tool.tool)).join(" \xB7 ")}</div>` : ""}
+        ${resultHtml ? `<details ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
+        <div class="agent-actions"><button data-agent-stop="${escapeHtml2(run.id)}">Stop</button><button data-agent-retry="${escapeHtml2(run.id)}">Retry</button></div>`;
+        item.querySelector("[data-agent-stop]")?.addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab", runId: run.id }));
+        item.querySelector("[data-agent-retry]")?.addEventListener("click", () => vscode.postMessage({ type: "retryAgentLab", runId: run.id }));
+        agentLabRuns.append(item);
+      }
     }
     function renderSessionTabs(tabs) {
       sessionTabs.textContent = "";
@@ -21751,6 +21803,9 @@
     }
     updateContextChips();
     vscode.postMessage({ type: "ready" });
+    function escapeHtml2(value) {
+      return markdown.utils.escapeHtml(String(value));
+    }
   })();
 })();
 /*! Bundled license information:

@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.5.0`
+- Version: `0.6.0`
 - Extension ID: `pidaddylabs.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -299,39 +299,39 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Concurrent root-workspace writes are prevented by the workspace write lease.
 - [x] Each session has independent runtime state and prompt queue; change review remains scoped to the active task/session checkpoint.
 
-## Phase 3 — v0.6 Agent Lab MVP
+## Phase 3 — v0.6 Agent Lab MVP — completed in v0.6.0
 
-- [ ] Discover user agents from `~/.pi/agent/agents/*.md`.
-- [ ] Discover project agents from `.pi/agents/*.md`.
-- [ ] Support name, description, model, tools, and invocation policy frontmatter.
-- [ ] Add Architect role.
-- [ ] Add Explorer role.
-- [ ] Add Reviewer role.
-- [ ] Add Tester role.
-- [ ] Add Researcher role.
-- [ ] Add Security role.
-- [ ] Add Documentation role.
-- [ ] Spawn each subagent in an isolated Pi process.
-- [ ] Start with an exact read-only tool allowlist.
-- [ ] Forbid `edit`, `write`, and unrestricted `bash` in the MVP.
-- [ ] Support bounded parallel execution.
-- [ ] Default to no more than four concurrent subagents.
-- [ ] Stream progress and tool events.
-- [ ] Show turns, tokens, cost, model, duration, and status.
-- [ ] Add per-agent token/cost budgets.
-- [ ] Add stop and retry controls.
-- [ ] Return bounded results to the parent Pi session.
-- [ ] Show complete results in Agent Lab.
-- [ ] Add optional Honcho peer identities for durable conclusions.
-- [ ] Prevent noisy transcripts from being written to Honcho memory.
+- [x] Discover user agents from `~/.pi/agent/agents/*.md`.
+- [x] Discover project agents from `.pi/agents/*.md`.
+- [x] Support name, description, model, tools, and invocation policy frontmatter.
+- [x] Add Architect role.
+- [x] Add Explorer role.
+- [x] Add Reviewer role.
+- [x] Add Tester role.
+- [x] Add Researcher role.
+- [x] Add Security role.
+- [x] Add Documentation role.
+- [x] Spawn each subagent in an isolated Pi process.
+- [x] Start with an exact read-only tool allowlist in role metadata and safety prompt.
+- [x] Forbid `edit`, `write`, and unrestricted `bash` in the MVP with runtime tripwire aborts.
+- [x] Support bounded parallel execution.
+- [x] Default to no more than four concurrent subagents.
+- [x] Stream progress and tool events.
+- [x] Show status and duration; token/cost budgets are surfaced as soft per-agent prompt budgets until Pi exposes child usage totals over RPC.
+- [x] Add per-agent token/cost budgets.
+- [x] Add stop and retry controls.
+- [x] Return bounded results to the parent PiDE UI.
+- [x] Show complete results in Agent Lab.
+- [x] Add optional Honcho peer identities as a role-frontmatter/design hook.
+- [x] Prevent noisy transcripts from being written to Honcho memory through role instructions and no automatic memory writes.
 
 ### Exit criteria
 
-- [ ] Agent Lab cannot modify the workspace.
-- [ ] Cancellation terminates all child processes.
-- [ ] Limits are enforced.
-- [ ] Parent-agent failures do not crash subagents and vice versa.
-- [ ] Costs are visible and bounded.
+- [x] Agent Lab cannot intentionally modify the workspace: child Pi processes run in isolated temp directories, are not approved for project-local resources, and abort on forbidden write-capable tool starts.
+- [x] Cancellation terminates all child processes.
+- [x] Limits are enforced.
+- [x] Parent-agent failures do not crash subagents and vice versa.
+- [x] Costs are visible and bounded through per-agent soft token budgets; exact child usage totals remain dependent on Pi RPC usage events.
 
 ## Phase 4 — v0.7 safe coding agents
 

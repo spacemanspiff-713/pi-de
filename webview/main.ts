@@ -6,6 +6,8 @@ import type {
   HostToWebviewMessage,
   McpStatusSnapshot,
   PiCommandInfo,
+  AgentRole,
+  AgentRunSnapshot,
   WebviewToHostMessage,
 } from "../src/protocol";
 import type { ChangeSet } from "../src/changeReview";
@@ -70,6 +72,11 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const changesPanel = document.getElementById("changes-panel");
   const changesTotals = document.getElementById("changes-totals");
   const changesList = document.getElementById("changes-list");
+  const agentLabPanel = document.getElementById("agent-lab-panel");
+  const agentLabSummary = document.getElementById("agent-lab-summary");
+  const agentLabTask = document.getElementById("agent-lab-task") as HTMLTextAreaElement;
+  const agentLabRoles = document.getElementById("agent-lab-roles");
+  const agentLabRuns = document.getElementById("agent-lab-runs");
   const mcpPanel = document.getElementById("mcp-panel");
   const mcpTotals = document.getElementById("mcp-totals");
   const mcpList = document.getElementById("mcp-list");
@@ -94,6 +101,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
   let contextSearchTimer: ReturnType<typeof setTimeout> | undefined;
   let latestChangeSet: ChangeSet | undefined;
   let latestMcpStatus: McpStatusSnapshot | undefined;
+  let latestAgentRoles: AgentRole[] = [];
+  let latestAgentRuns: AgentRunSnapshot[] = [];
   let latestMcpPrompts: PiCommandInfo[] = [];
   let renderFrame: number | undefined;
   const tools = new Map<string, ToolElements>();
@@ -104,6 +113,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
 
   document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
   document.getElementById("resources").addEventListener("click", () => vscode.postMessage({ type: "openResources" }));
+  document.getElementById("agent-lab").addEventListener("click", () => vscode.postMessage({ type: "openAgentLab" }));
   compactButton.addEventListener("click", () => vscode.postMessage({ type: "compactSession" }));
   reloadSessionButton.addEventListener("click", () => vscode.postMessage({ type: "reloadSession" }));
   document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
@@ -114,6 +124,9 @@ markdown.renderer.rules.fence = (tokens, index) => {
     else vscode.postMessage({ type: "reviewChanges" });
   });
   document.getElementById("mcp").addEventListener("click", () => showPanel(mcpPanel));
+  document.getElementById("agent-lab-run").addEventListener("click", () => runAgentLab());
+  document.getElementById("agent-lab-stop").addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab" }));
+  document.getElementById("agent-lab-refresh").addEventListener("click", () => vscode.postMessage({ type: "refreshAgentLab" }));
   document.getElementById("mcp-reconnect-all").addEventListener("click", () => vscode.postMessage({ type: "mcpAction", action: "reconnect" }));
   document.getElementById("mcp-config").addEventListener("click", () => vscode.postMessage({ type: "openMcpConfig" }));
   runtimeTrustButton.addEventListener("click", () => vscode.postMessage({ type: "manageTrust" }));
@@ -202,6 +215,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
       case "extensionUiRequest": renderExtensionRequest(data); break;
       case "sessionStats": renderSessionStats(data.stats); break;
       case "sessionTabs": renderSessionTabs(data.tabs || []); break;
+      case "agentLab": renderAgentLab(data.roles || [], data.runs || [], data.maxConcurrent || 4); showPanel(agentLabPanel); break;
       case "clear":
         transcript.textContent = "";
         tools.clear();
@@ -285,6 +299,45 @@ markdown.renderer.rules.fence = (tokens, index) => {
     statusDot.className = `status-dot ${status || ""}`;
     banner.textContent = message || "";
     banner.classList.toggle("hidden", status === "ready");
+  }
+
+  function runAgentLab() {
+    const roleIds = Array.from(agentLabRoles.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")).map((input) => input.value);
+    vscode.postMessage({ type: "runAgentLab", roleIds, task: agentLabTask.value });
+  }
+
+  function renderAgentLab(roles: AgentRole[], runs: AgentRunSnapshot[], maxConcurrent: number) {
+    latestAgentRoles = roles;
+    latestAgentRuns = runs;
+    agentLabSummary.textContent = `${roles.length} roles · ${runs.filter((run) => ["queued", "starting", "running"].includes(run.status)).length}/${maxConcurrent} active or queued · read-only MVP`;
+    agentLabRoles.textContent = "";
+    for (const role of roles) {
+      const label = document.createElement("label");
+      label.className = "agent-role";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = role.id;
+      input.checked = ["architect", "explorer", "reviewer"].includes(role.id);
+      const body = document.createElement("span");
+      body.innerHTML = `<strong>${escapeHtml(role.name)}</strong><small>${escapeHtml(role.source)} · ${escapeHtml(role.description || "")}</small>`;
+      label.append(input, body);
+      agentLabRoles.append(label);
+    }
+    agentLabRuns.textContent = "";
+    for (const run of runs) {
+      const item = document.createElement("article");
+      item.className = `agent-run ${run.status}`;
+      const resultHtml = run.result ? DOMPurify.sanitize(markdown.render(run.result)) : "";
+      item.innerHTML = `<header><strong>${escapeHtml(run.roleName)}</strong><span>${escapeHtml(run.status)}</span></header>
+        <div class="agent-progress">${escapeHtml(run.progress || "")}${run.durationMs ? ` · ${Math.round(run.durationMs / 1000)}s` : ""}</div>
+        ${run.error ? `<div class="agent-error">${escapeHtml(run.error)}</div>` : ""}
+        ${run.toolEvents?.length ? `<div class="agent-tools">${run.toolEvents.slice(-8).map((tool) => escapeHtml(tool.tool)).join(" · ")}</div>` : ""}
+        ${resultHtml ? `<details ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
+        <div class="agent-actions"><button data-agent-stop="${escapeHtml(run.id)}">Stop</button><button data-agent-retry="${escapeHtml(run.id)}">Retry</button></div>`;
+      item.querySelector("[data-agent-stop]")?.addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab", runId: run.id }));
+      item.querySelector("[data-agent-retry]")?.addEventListener("click", () => vscode.postMessage({ type: "retryAgentLab", runId: run.id }));
+      agentLabRuns.append(item);
+    }
   }
 
   function renderSessionTabs(tabs) {
@@ -769,4 +822,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
 
   updateContextChips();
   vscode.postMessage({ type: "ready" });
+  function escapeHtml(value: string): string {
+    return markdown.utils.escapeHtml(String(value));
+  }
 })();

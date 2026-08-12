@@ -11,9 +11,10 @@ const shell = `<!doctype html><html><body>
   <div id="widget"></div><section id="extension-request"></section><div id="change-summary"></div><main id="transcript"></main>
   <div id="jump" class="hidden"><button>Jump</button></div>
   <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
+  <section id="agent-lab-panel"><button data-close-panel="agent-lab-panel"></button><div id="agent-lab-summary"></div><textarea id="agent-lab-task"></textarea><div id="agent-lab-roles"></div><button id="agent-lab-run"></button><button id="agent-lab-stop"></button><button id="agent-lab-refresh"></button><div id="agent-lab-runs"></div></section>
   <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>
   <div id="context-chips"></div><textarea id="prompt"></textarea>
-  <button id="sessions"></button><button id="resources"></button><button id="compact"></button><button id="reload-session"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
+  <button id="sessions"></button><button id="resources"></button><button id="agent-lab"></button><button id="compact"></button><button id="reload-session"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
   <button id="mcp-reconnect-all"></button><button id="mcp-config"></button>
   <button id="attach"></button><button id="stop"></button><button id="send"></button>
   <span id="queue"></span><div id="command-menu"></div><div id="context-menu"></div>
@@ -112,6 +113,12 @@ describe("bundled Pi webview", () => {
       data: { type: "sessionTabs", tabs: [{ id: "a", title: "A", status: "idle", active: true }, { id: "b", title: "B", status: "working", unread: true }] },
     }));
     expect(document.querySelector("#session-tabs")?.textContent).toContain("B");
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { type: "agentLab", maxConcurrent: 4, roles: [{ id: "architect", name: "Architect", source: "builtin", description: "Plans" }], runs: [{ id: "run-1", roleName: "Architect", roleId: "architect", status: "succeeded", progress: "Complete", result: "Done", toolEvents: [] }] },
+    }));
+    expect(document.querySelector("#agent-lab-summary")?.textContent).toContain("1 roles");
+    expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("Done");
 
     window.dispatchEvent(new window.MessageEvent("message", {
       data: { type: "sessionStats", stats: { cost: 0.1234, contextUsage: { tokens: 60_000, contextWindow: 200_000, percent: 30 } } },

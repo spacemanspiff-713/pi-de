@@ -1,4 +1,6 @@
 import type { ChangeSet } from "./changeReview";
+import type { AgentRole, AgentRunSnapshot } from "./controllers/agentLabController";
+export type { AgentRole, AgentRunSnapshot } from "./controllers/agentLabController";
 
 export interface PiModelState {
   id?: string;
@@ -115,6 +117,11 @@ export type WebviewToHostMessage =
   | { type: "compactSession" }
   | { type: "reloadSession" }
   | { type: "openResources" }
+  | { type: "openAgentLab" }
+  | { type: "refreshAgentLab" }
+  | { type: "runAgentLab"; roleIds: string[]; task: string }
+  | { type: "stopAgentLab"; runId?: string }
+  | { type: "retryAgentLab"; runId: string }
   | { type: "activateTab"; id: string }
   | { type: "closeTab"; id: string }
   | { type: "extensionUiResponse"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
@@ -128,6 +135,7 @@ export type HostToWebviewMessage =
   | ({ type: "state" } & PiState)
   | { type: "sessionStats"; stats: SessionStats }
   | { type: "sessionTabs"; tabs: SessionTabState[] }
+  | { type: "agentLab"; roles: AgentRole[]; runs: AgentRunSnapshot[]; maxConcurrent: number }
   | { type: "clear" }
   | { type: "userPrompt"; text: string }
   | { type: "textDelta"; delta: string }
@@ -155,7 +163,7 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
   const noData = new Set([
     "ready", "abort", "newSession", "openSession", "restart", "pickModel", "pickThinking",
     "reviewChanges", "openMcpConfig", "showOutput", "manageTrust", "openRuntimeSettings", "retryRuntime",
-    "compactSession", "reloadSession", "openResources",
+    "compactSession", "reloadSession", "openResources", "openAgentLab", "refreshAgentLab",
   ]);
   if (noData.has(value.type)) return { type: value.type } as WebviewToHostMessage;
   if (["prompt", "copyText", "insertText"].includes(value.type)) {
@@ -176,6 +184,15 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
     return query === undefined || requestId === undefined
       ? undefined
       : { type: value.type, query, requestId };
+  }
+  if (value.type === "runAgentLab") {
+    const task = boundedString(value.task, 64 * 1024);
+    const roleIds = Array.isArray(value.roleIds) ? value.roleIds.filter((item): item is string => typeof item === "string" && item.length <= 512).slice(0, 16) : undefined;
+    return task === undefined || roleIds === undefined ? undefined : { type: value.type, roleIds, task };
+  }
+  if (["stopAgentLab", "retryAgentLab"].includes(value.type)) {
+    const runId = optionalBoundedString(value.runId, 512);
+    return runId === undefined ? undefined : { type: value.type, runId: runId || undefined } as WebviewToHostMessage;
   }
   if (["activateTab", "closeTab"].includes(value.type)) {
     const id = boundedString(value.id, 4096);
