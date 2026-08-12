@@ -8,6 +8,15 @@ PiDE gives Pi a first-class home in the editor: streaming conversations, native 
 
 > **Project status:** Early open-source release. v0.6.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
+## 🙏 Shoutout
+
+PiDE learned a tremendous amount from two pioneering Pi-in-VS-Code experiments:
+
+- **[`auchan/pi-on-code`](https://github.com/auchan/pi-on-code)** — the first VS Code extension to embed a real Pi agent with streaming chat, session switching, and inline code actions. Its clean provider/webview split, `@`-mention system, and diff-review UX were direct design references.
+- **[`JohnnyZ93/pi-agent-studio`](https://github.com/JohnnyZ93/pi-agent-studio)** — a polished multi-tool studio that demonstrated resource panels, extension UI bridging, package management, and the potential of a richer sidecar architecture.
+
+Both are MIT licensed and worth studying. This project builds on their patterns while keeping a focused, stable RPC-sidecar core.
+
 ## Why this project exists
 
 Pi already provides a capable coding-agent runtime, package ecosystem, extension system, session format, and MCP integration. This project focuses on the missing editor experience.
@@ -333,12 +342,7 @@ The detailed checklist is maintained in [GAMEPLAN.md](GAMEPLAN.md). Third-party 
 
 ## Inspiration and attribution
 
-The broader Pi ecosystem has several excellent VS Code experiments. Product and architecture research for this project included:
-
-- [`auchan/pi-on-code`](https://github.com/auchan/pi-on-code)
-- [`JohnnyZ93/pi-agent-studio`](https://github.com/JohnnyZ93/pi-agent-studio)
-
-Both are MIT licensed. This project currently maintains its own RPC-sidecar implementation and selectively learns from patterns demonstrated across the ecosystem. Any future direct code adaptation must preserve the relevant copyright and license notices.
+See the [Shoutout](#-shoutout) near the top of this README. Both reference projects are MIT licensed. This project maintains its own RPC-sidecar implementation and selectively learns from patterns demonstrated across the ecosystem. Any future direct code adaptation must preserve the relevant copyright and license notices.
 
 ## Contributing
 
