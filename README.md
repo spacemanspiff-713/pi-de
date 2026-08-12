@@ -12,7 +12,7 @@ PiDE gives Pi a first-class home in the editor: streaming conversations, native 
 
 PiDE learned a tremendous amount from two pioneering Pi-in-VS-Code experiments:
 
-- **[`auchan/pi-on-code`](https://github.com/auchan/pi-on-code)** — the first VS Code extension to embed a real Pi agent with streaming chat, session switching, and inline code actions. Its clean provider/webview split, `@`-mention system, and diff-review UX were direct design references.
+- **[`auchan/pi-on-code`](https://github.com/auchan/pi-on-code)** — a VS Code extension that embeds a real Pi agent with streaming chat, session switching, and inline code actions. Its clean provider/webview split, `@`-mention system, and diff-review UX were direct design references.
 - **[`JohnnyZ93/pi-agent-studio`](https://github.com/JohnnyZ93/pi-agent-studio)** — a polished multi-tool studio that demonstrated resource panels, extension UI bridging, package management, and the potential of a richer sidecar architecture.
 
 Both are MIT licensed and worth studying. This project builds on their patterns while keeping a focused, stable RPC-sidecar core.
