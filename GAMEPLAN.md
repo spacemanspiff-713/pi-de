@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.7.0`
+- Version: `0.8.0`
 - Extension ID: `spacemanspiff-713.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -350,6 +350,25 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Support Architect → Implementer → Tester → Reviewer workflows through independently selectable role runs and worktree review/validation.
 - [x] Compare competing implementations through separate retained worktree review cards.
 - [x] Preserve a persisted audit trail of agent worktree actions and outcomes.
+
+## Phase 5A — v0.8 Agent Lab control and observability — completed in v0.8.0
+
+- [x] Add editable Markdown overrides for built-in roles.
+- [x] Surface role model, tools, skills, max tool calls, and max duration in Agent Lab.
+- [x] Apply role `model` settings before launching child prompts.
+- [x] Enforce exact role tool allowlists with runtime tripwire aborts.
+- [x] Add per-run tool-call caps and duration caps.
+- [x] Show live model, last tool, tool count, tool cap, and per-tool breakdown.
+- [x] Tighten default built-in role tool policies so Researcher/Documentation prefer official docs and avoid noisy repository search loops.
+- [x] Keep Implementer worktree rules from Phase 4 intact while adding observability.
+- [x] Update README, roadmap, package settings, protocol, and webview tests.
+
+### Exit criteria
+
+- [x] Built-in roles are editable through user-level Markdown overrides.
+- [x] Agent Lab no longer silently ignores role model/frontmatter controls.
+- [x] Over-budget or disallowed tool use is visible and aborts the run.
+- [x] Tool behavior is explainable from the run card without opening raw JSONL.
 
 ## Phase 5 — advanced studio backlog
 

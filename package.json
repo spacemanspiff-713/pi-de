@@ -2,7 +2,7 @@
   "name": "pide",
   "displayName": "PiDE",
   "description": "Pi Development Environment: a dedicated VS Code interface for the Pi coding agent.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "publisher": "spacemanspiff-713",
   "private": true,
   "license": "MIT",
@@ -203,7 +203,7 @@
           "default": 4,
           "minimum": 1,
           "maximum": 8,
-          "description": "Maximum read-only Agent Lab subagents that can run concurrently."
+          "description": "Maximum Agent Lab subagents that can run concurrently."
         },
         "pide.agentLabTokenBudget": {
           "type": "number",
@@ -216,6 +216,20 @@
           "type": "string",
           "default": "npm test",
           "description": "Validation command run inside an Agent Lab coding-agent worktree."
+        },
+        "pide.agentLabMaxToolCalls": {
+          "type": "number",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Default maximum tool calls per Agent Lab run unless a role override specifies maxToolCalls."
+        },
+        "pide.agentLabMaxDurationMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 120,
+          "description": "Default maximum minutes per Agent Lab run unless a role override specifies maxDurationMinutes."
         }
       }
     }

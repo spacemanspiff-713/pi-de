@@ -115,10 +115,12 @@ describe("bundled Pi webview", () => {
     expect(document.querySelector("#session-tabs")?.textContent).toContain("B");
 
     window.dispatchEvent(new window.MessageEvent("message", {
-      data: { type: "agentLab", maxConcurrent: 4, roles: [{ id: "architect", name: "Architect", source: "builtin", description: "Plans" }], runs: [{ id: "run-1", roleName: "Architect", roleId: "architect", status: "succeeded", progress: "Complete", result: "Done", toolEvents: [] }] },
+      data: { type: "agentLab", maxConcurrent: 4, roles: [{ id: "architect", name: "Architect", source: "builtin", description: "Plans", model: "openrouter/deepseek/deepseek-v4-pro", tools: ["read"], maxToolCalls: 8 }], runs: [{ id: "run-1", roleName: "Architect", roleId: "architect", status: "succeeded", progress: "Complete", result: "Done", model: "openrouter/deepseek/deepseek-v4-pro", toolCallCount: 2, maxToolCalls: 8, lastTool: "read", toolCounts: { read: 2 }, toolEvents: [{ tool: "read", status: "tool_execution_start" }] }] },
     }));
     expect(document.querySelector("#agent-lab-summary")?.textContent).toContain("1 roles");
     expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("Done");
+    expect(document.querySelector("#agent-lab-roles")?.textContent).toContain("openrouter/deepseek");
+    expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("2/8");
 
     window.dispatchEvent(new window.MessageEvent("message", {
       data: { type: "sessionStats", stats: { cost: 0.1234, contextUsage: { tokens: 60_000, contextWindow: 200_000, percent: 30 } } },

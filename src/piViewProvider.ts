@@ -407,6 +407,12 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       case "retryAgentLab":
         if (message.runId) await this.agentLab.retry(message.runId);
         break;
+      case "editAgentRole":
+        await this.agentLab.editRole(message.roleId);
+        break;
+      case "resetAgentRole":
+        await this.agentLab.resetRole(message.roleId);
+        break;
       case "reviewAgentWorktree":
         if (message.runId) await this.agentLab.review(message.runId);
         break;
