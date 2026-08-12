@@ -17,7 +17,8 @@ import {
   type PiState,
   type SessionStats,
 } from "./protocol";
-import { PiRuntime, type PiRuntimeEvent } from "./runtime/piRuntime";
+import type { PiRuntime } from "./runtime/piRuntime";
+import { PiRuntimeManager, type PiRuntimeManagerEvent } from "./runtime/piRuntimeManager";
 
 interface ContextCompletion {
   label: string;
@@ -37,7 +38,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private disposed = false;
   private fileContextCache?: { expiresAt: number; items: ContextCompletion[] };
   private availableCommands: PiCommandInfo[] = [];
-  private readonly runtime: PiRuntime;
+  private readonly runtimeManager: PiRuntimeManager;
   private readonly changeReview: ChangeReviewController;
   private readonly sessions: SessionController;
   private readonly mcp: McpController;
@@ -45,13 +46,21 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private readonly resources: ResourceController;
   private readonly unsubscribeRuntime: () => void;
 
+  private get runtime(): PiRuntime {
+    return this.runtimeManager.activeRuntime;
+  }
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly output: vscode.OutputChannel,
   ) {
     const folder = () => this.workspaceFolder();
     const post = (message: Record<string, unknown>) => this.post(message as HostToWebviewMessage);
-    this.runtime = new PiRuntime((line) => this.output.appendLine(`[${new Date().toISOString()}] ${line}`));
+    this.runtimeManager = new PiRuntimeManager((runtimeId, line) => this.output.appendLine(`[${new Date().toISOString()}] [${runtimeId}] ${line}`));
+    this.runtimeManager.hydrate(
+      context.workspaceState.get<Array<{ id: string; sessionFile?: string; title: string; lastActive: number }>>("pide.runtimeTabs", []),
+      context.workspaceState.get<string>("pide.activeRuntimeTab"),
+    );
     this.changeReview = new ChangeReviewController(context, output, folder);
     this.sessions = new SessionController({
       context,
@@ -62,6 +71,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       abort: () => this.abort(),
       refresh: () => this.refresh(),
       refreshState: () => this.refreshState(),
+      openSessionTab: (session) => this.openSessionTab(session),
       post,
     });
     this.mcp = new McpController(
@@ -73,7 +83,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     );
     this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp, new VscodeContextController(), () => Boolean(this.view));
     this.resources = new ResourceController(folder, () => this.runtime.health, () => this.restart(), output);
-    this.unsubscribeRuntime = this.runtime.onEvent((event) => void this.handleRuntimeEvent(event));
+    this.unsubscribeRuntime = this.runtimeManager.onEvent((event) => void this.handleRuntimeEvent(event));
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -181,11 +191,13 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     const configuredExecutable = config.get<string>("executablePath", "pi").trim() || "pi";
     const extraArgs = config.get<string[]>("extraArgs", []);
     const approveWorkspace = config.get<boolean>("approveTrustedWorkspace", true);
-    const sessionFile = await this.sessions.restoreSessionFile();
+    const sessionFile = this.runtimeManager.activeTab.sessionFile ?? await this.sessions.restoreSessionFile();
     const bridgePath = vscode.Uri.joinPath(this.context.extensionUri, "pi-bridge", "index.ts").fsPath;
 
     this.post({ type: "connection", status: "starting", message: "Checking and starting Pi…" });
-    const started = await this.runtime.start({
+    this.runtimeManager.ensureTab({ id: this.runtimeManager.activeId, sessionFile, title: sessionFile ? basename(sessionFile).replace(/\.jsonl$/i, "") : "Current session" });
+    this.postTabs();
+    const started = await this.runtimeManager.startActive({
       configuredExecutable,
       cwd: folder.uri.fsPath,
       args: [...extraArgs, "--extension", bridgePath],
@@ -193,6 +205,8 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       approveWorkspace,
     });
     if (!started) return;
+    await this.runtimeManager.suspendIdle(config.get<number>("maxActiveRuntimes", 3));
+    this.postTabs();
 
     try {
       await this.refresh();
@@ -206,15 +220,23 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   private async stopClient(): Promise<void> {
-    await this.runtime.stop();
+    await this.runtimeManager.stopAll();
   }
 
-  private async handleRuntimeEvent(event: PiRuntimeEvent): Promise<void> {
+  private async handleRuntimeEvent(event: PiRuntimeManagerEvent): Promise<void> {
+    if (event.type === "health") this.runtimeManager.setHealth(event.runtimeId, event.health);
+    if (event.runtimeId !== this.runtimeManager.activeId) {
+      if (event.type === "record" && event.record.type === "agent_start") this.runtimeManager.markWorking(event.runtimeId, true);
+      if (event.type === "record" && event.record.type === "agent_settled") this.runtimeManager.markWorking(event.runtimeId, false);
+      this.postTabs();
+      return;
+    }
     if (event.type === "record") {
       await this.handleRpcRecord(event.record);
       return;
     }
     if (event.type === "health") {
+      this.postTabs();
       this.post({ type: "runtimeHealth", health: event.health });
       if (["missing", "incompatible", "error"].includes(event.health.status)) {
         this.post({ type: "connection", status: "error", message: event.health.message });
@@ -241,6 +263,8 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     ]);
 
     this.state = asRecord(stateResponse.data) as PiState;
+    this.runtimeManager.ensureTab({ id: this.runtimeManager.activeId, sessionFile: this.state.sessionFile, title: this.state.sessionName || (this.state.sessionFile ? basename(this.state.sessionFile).replace(/\.jsonl$/i, "") : undefined) });
+    this.postTabs();
     await this.sessions.rememberCurrent();
 
     const messages = asArray(asRecord(messagesResponse.data).messages)
@@ -354,6 +378,14 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       case "openResources":
         await this.resources.open();
         break;
+      case "activateTab":
+        await this.activateTab(message.id);
+        break;
+      case "closeTab":
+        await this.runtimeManager.close(message.id);
+        await this.refresh().catch(() => undefined);
+        this.postTabs();
+        break;
       case "extensionUiResponse":
         this.extensionUi.respond(message.id, message);
         break;
@@ -366,6 +398,13 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     await this.ensureStarted();
     const client = this.runtime.client;
     if (!client?.running) return;
+
+    const owner = this.runtimeManager.writeLeaseOwner;
+    if (owner && owner !== this.runtimeManager.activeId && !prompt.startsWith("/")) {
+      this.post({ type: "notice", message: "Another PiDE session is working in this workspace. This prompt is queued until the write lease is free." });
+      setTimeout(() => void this.sendPrompt(text), 2_000);
+      return;
+    }
 
     if (
       !this.state.isStreaming
@@ -443,6 +482,8 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     const response = await this.runtime.client?.request({ type: "get_state" });
     if (!response) return;
     this.state = asRecord(response.data) as PiState;
+    this.runtimeManager.ensureTab({ id: this.runtimeManager.activeId, sessionFile: this.state.sessionFile, title: this.state.sessionName || (this.state.sessionFile ? basename(this.state.sessionFile).replace(/\.jsonl$/i, "") : undefined) });
+    this.postTabs();
     if (this.state.sessionFile) await this.sessions.rememberCurrent();
     await this.refreshSessionStats();
     this.postState();
@@ -466,10 +507,14 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private async handleRpcRecord(record: RpcRecord): Promise<void> {
     switch (record.type) {
       case "agent_start":
+        this.runtimeManager.markWorking(this.runtimeManager.activeId, true);
+        this.postTabs();
         this.state.isStreaming = true;
         this.post({ type: "busy", value: true });
         break;
       case "agent_settled": {
+        this.runtimeManager.markWorking(this.runtimeManager.activeId, false);
+        this.postTabs();
         this.state.isStreaming = false;
         this.post({ type: "busy", value: false });
         const changeSet = await this.changeReview.finish().catch((error) => {
@@ -708,6 +753,21 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     await vscode.env.openExternal(uri);
   }
 
+  private async openSessionTab(session: { file: string; id?: string; name?: string }): Promise<void> {
+    const tab = this.runtimeManager.ensureTab({ id: `session:${session.file}`, sessionFile: session.file, title: session.name || basename(session.file).replace(/\.jsonl$/i, "") });
+    this.runtimeManager.activate(tab.id);
+    this.postTabs();
+    await this.ensureStarted();
+    await this.refresh();
+  }
+
+  private async activateTab(id: string): Promise<void> {
+    if (!this.runtimeManager.activate(id)) return;
+    this.postTabs();
+    if (this.runtime.running) await this.refresh().catch((error) => this.showError(error));
+    else await this.ensureStarted().catch((error) => this.showError(error));
+  }
+
   private async compactSession(): Promise<void> {
     const client = this.runtime.client;
     if (!client?.running || this.state.isStreaming || this.state.isCompacting) return;
@@ -737,6 +797,21 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       } : undefined,
     };
     this.post({ type: "sessionStats", stats: this.sessionStats });
+  }
+
+  private postTabs(): void {
+    void this.context.workspaceState.update("pide.runtimeTabs", this.runtimeManager.allTabs.map((tab) => ({ id: tab.id, sessionFile: tab.sessionFile, title: tab.title, lastActive: tab.lastActive })));
+    void this.context.workspaceState.update("pide.activeRuntimeTab", this.runtimeManager.activeId);
+    this.post({
+      type: "sessionTabs",
+      tabs: this.runtimeManager.allTabs.map((tab) => ({
+        id: tab.id,
+        title: tab.title,
+        status: tab.status,
+        unread: tab.unread,
+        active: tab.id === this.runtimeManager.activeId,
+      })),
+    });
   }
 
   private postState(): void {
@@ -798,6 +873,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       <button id="output" title="Show output">⋯</button>
     </div>
   </header>
+  <section id="session-tabs" class="session-tabs hidden"></section>
   <section class="selectors">
     <button id="model" class="selector">Select model</button>
     <button id="thinking" class="selector">thinking: —</button>

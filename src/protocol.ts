@@ -19,6 +19,14 @@ export interface PiState {
   sessionName?: string;
 }
 
+export interface SessionTabState {
+  id: string;
+  title: string;
+  status: string;
+  unread?: boolean;
+  active?: boolean;
+}
+
 export interface SessionStats {
   tokens?: number;
   cost?: number;
@@ -107,6 +115,8 @@ export type WebviewToHostMessage =
   | { type: "compactSession" }
   | { type: "reloadSession" }
   | { type: "openResources" }
+  | { type: "activateTab"; id: string }
+  | { type: "closeTab"; id: string }
   | { type: "extensionUiResponse"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
 
 export type HostToWebviewMessage =
@@ -117,6 +127,7 @@ export type HostToWebviewMessage =
   | { type: "contextResults"; requestId: string; items: ContextCompletionItem[] }
   | ({ type: "state" } & PiState)
   | { type: "sessionStats"; stats: SessionStats }
+  | { type: "sessionTabs"; tabs: SessionTabState[] }
   | { type: "clear" }
   | { type: "userPrompt"; text: string }
   | { type: "textDelta"; delta: string }
@@ -165,6 +176,10 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
     return query === undefined || requestId === undefined
       ? undefined
       : { type: value.type, query, requestId };
+  }
+  if (["activateTab", "closeTab"].includes(value.type)) {
+    const id = boundedString(value.id, 4096);
+    return id === undefined ? undefined : { type: value.type, id } as WebviewToHostMessage;
   }
   if (value.type === "extensionUiResponse") {
     const id = boundedString(value.id, 256);

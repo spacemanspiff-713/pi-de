@@ -35,6 +35,7 @@ export interface SessionControllerDependencies {
   abort: () => Promise<void>;
   refresh: () => Promise<void>;
   refreshState: () => Promise<void>;
+  openSessionTab?: (session: SessionSummary) => Promise<void>;
   post: (message: Record<string, unknown>) => void;
 }
 
@@ -136,7 +137,8 @@ export class SessionController {
       return;
     }
     if (action === "resume") {
-      await this.switchTo(session.file);
+      if (this.dependencies.openSessionTab) await this.dependencies.openSessionTab(session);
+      else await this.switchTo(session.file);
       return;
     }
     if (action === "rename") {

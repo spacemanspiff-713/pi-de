@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { JSDOM } from "jsdom";
 
 const shell = `<!doctype html><html><body>
+  <section id="session-tabs"></section>
   <span id="status-dot"></span><button id="model"></button><button id="thinking"></button><span id="session-stats"></span>
   <div id="banner"></div>
   <section id="runtime-health"><strong id="runtime-health-title"></strong><p id="runtime-health-message"></p><div id="runtime-health-details"></div><button id="runtime-trust"></button><button id="runtime-settings"></button><button id="runtime-retry"></button></section>
@@ -106,6 +107,11 @@ describe("bundled Pi webview", () => {
     }));
     expect(document.querySelector("#mcp-totals")?.textContent).toContain("1/1 connected");
     expect(document.querySelector("#mcp-list")?.textContent).toContain("docs");
+
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { type: "sessionTabs", tabs: [{ id: "a", title: "A", status: "idle", active: true }, { id: "b", title: "B", status: "working", unread: true }] },
+    }));
+    expect(document.querySelector("#session-tabs")?.textContent).toContain("B");
 
     window.dispatchEvent(new window.MessageEvent("message", {
       data: { type: "sessionStats", stats: { cost: 0.1234, contextUsage: { tokens: 60_000, contextWindow: 200_000, percent: 30 } } },
