@@ -20934,6 +20934,132 @@
   _defineProperty(MarkdownIt, "StateInline", StateInline);
   var MarkdownItCallable = callable(MarkdownIt);
 
+  // src/agentArtifacts.ts
+  var OFFICIAL_HOSTS = [
+    /(?:^|\.)code\.visualstudio\.com$/i,
+    /(?:^|\.)docs\.github\.com$/i,
+    /(?:^|\.)learn\.microsoft\.com$/i,
+    /(?:^|\.)developer\.mozilla\.org$/i,
+    /(?:^|\.)docs\.npmjs\.com$/i,
+    /(?:^|\.)nodejs\.org$/i,
+    /(?:^|\.)pi\.dev$/i
+  ];
+  function previewText(text3, max = 180) {
+    const compact = String(text3 || "").replace(/\s+/g, " ").trim();
+    if (!compact) return "";
+    return compact.length <= max ? compact : `${compact.slice(0, Math.max(1, max - 1))}\u2026`;
+  }
+  function extractAgentSources(input) {
+    const byUrl = /* @__PURE__ */ new Map();
+    const remember = (source) => {
+      const key = normalizeUrl(source.url);
+      if (!key) return;
+      const existing = byUrl.get(key);
+      if (!existing) {
+        byUrl.set(key, { ...source, url: key });
+        return;
+      }
+      if (source.status === "failed" || existing.status === "mentioned") {
+        byUrl.set(key, {
+          ...existing,
+          ...source,
+          url: key,
+          title: source.title || existing.title,
+          note: source.note || existing.note,
+          tool: source.tool || existing.tool
+        });
+      } else if (!existing.title && source.title) {
+        existing.title = source.title;
+      }
+    };
+    for (const event of input.toolEvents || []) {
+      const url = stringArg(event.args, "url") || stringArg(event.args, "href");
+      const query = stringArg(event.args, "query");
+      if (url) {
+        remember({
+          url,
+          title: query || titleFromUrl(url),
+          status: event.isError ? "failed" : "ok",
+          kind: classifyHost(url),
+          note: event.isError ? previewText(event.result, 160) || "Fetch failed" : query ? `query: ${query}` : void 0,
+          tool: event.tool
+        });
+      }
+      for (const found of urlsFromText(event.result || "")) {
+        remember({
+          url: found.url,
+          title: found.title || titleFromUrl(found.url),
+          status: event.isError ? "failed" : "ok",
+          kind: classifyHost(found.url),
+          tool: event.tool
+        });
+      }
+    }
+    for (const found of urlsFromText(input.result || "")) {
+      remember({
+        url: found.url,
+        title: found.title || titleFromUrl(found.url),
+        status: "mentioned",
+        kind: classifyHost(found.url),
+        note: "Cited in final answer"
+      });
+    }
+    return Array.from(byUrl.values());
+  }
+  function sourceSummary(sources) {
+    if (!sources.length) return "";
+    const official = sources.filter((source) => source.kind === "official").length;
+    const secondary = sources.filter((source) => source.kind === "secondary").length;
+    const community = sources.filter((source) => source.kind === "community").length;
+    const failed = sources.filter((source) => source.status === "failed").length;
+    return [
+      official ? `${official} official` : "",
+      secondary ? `${secondary} secondary` : "",
+      community ? `${community} community` : "",
+      failed ? `${failed} failed` : ""
+    ].filter(Boolean).join(" \xB7 ") || `${sources.length} sources`;
+  }
+  function stringArg(args, key) {
+    const value = args?.[key];
+    return typeof value === "string" && value.trim() ? value.trim() : void 0;
+  }
+  function urlsFromText(text3) {
+    const found = [];
+    for (const match of text3.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g)) {
+      found.push({ title: match[1].trim(), url: match[2] });
+    }
+    for (const match of text3.matchAll(/https?:\/\/[^\s)\]}>'"]+/g)) {
+      found.push({ title: "", url: match[0] });
+    }
+    return found;
+  }
+  function normalizeUrl(value) {
+    return value.replace(/[.,;:]+$/g, "").trim();
+  }
+  function titleFromUrl(url) {
+    try {
+      const parsed = new URL(url);
+      const path = decodeURIComponent(parsed.pathname.replace(/\/+/g, "/")).replace(/\/$/, "");
+      const leaf = path.split("/").filter(Boolean).slice(-2).join("/") || parsed.hostname;
+      return leaf || parsed.hostname;
+    } catch {
+      return url;
+    }
+  }
+  function classifyHost(url) {
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, "");
+      const path = new URL(url).pathname;
+      if (OFFICIAL_HOSTS.some((pattern) => pattern.test(host))) return "official";
+      if (host === "github.com" && /^\/microsoft(\/|$)/i.test(path)) return "official";
+      if (/(^|\.)(stackoverflow|stackexchange|reddit|medium|dev\.to|hashnode)\.com$/i.test(host) || host === "dev.to") return "community";
+      if (host === "github.com") return "community";
+      return "secondary";
+    } catch {
+      return "secondary";
+    }
+  }
+
   // webview/runtimeHealth.ts
   function renderRuntimeHealth(elements, health) {
     const available = health.status === "ready";
@@ -21025,6 +21151,11 @@
     const agentLabTask = document.getElementById("agent-lab-task");
     const agentLabRoles = document.getElementById("agent-lab-roles");
     const agentLabRuns = document.getElementById("agent-lab-runs");
+    const artifactInspector = document.getElementById("artifact-inspector");
+    const inspectorTitle = document.getElementById("inspector-title");
+    const inspectorMeta = document.getElementById("inspector-meta");
+    const inspectorTabs = document.getElementById("inspector-tabs");
+    const inspectorBody = document.getElementById("inspector-body");
     const mcpPanel = document.getElementById("mcp-panel");
     const mcpTotals = document.getElementById("mcp-totals");
     const mcpList = document.getElementById("mcp-list");
@@ -21043,6 +21174,8 @@
     let latestMcpStatus;
     let latestAgentRoles = [];
     let latestAgentRuns = [];
+    let selectedRunId = "";
+    let selectedInspectorTab = "result";
     let latestMcpPrompts = [];
     let renderFrame;
     const tools = /* @__PURE__ */ new Map();
@@ -21069,6 +21202,7 @@
     document.getElementById("agent-lab-run").addEventListener("click", () => runAgentLab());
     document.getElementById("agent-lab-stop").addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab" }));
     document.getElementById("agent-lab-refresh").addEventListener("click", () => vscode.postMessage({ type: "refreshAgentLab" }));
+    document.getElementById("inspector-close")?.addEventListener("click", () => selectAgentRun(""));
     document.getElementById("mcp-reconnect-all").addEventListener("click", () => vscode.postMessage({ type: "mcpAction", action: "reconnect" }));
     document.getElementById("mcp-config").addEventListener("click", () => vscode.postMessage({ type: "openMcpConfig" }));
     runtimeTrustButton.addEventListener("click", () => vscode.postMessage({ type: "manageTrust" }));
@@ -21091,6 +21225,12 @@
     });
     prompt.addEventListener("click", updateContextSearch);
     prompt.addEventListener("keyup", updateContextSearch);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && selectedRunId) {
+        selectAgentRun("");
+        event.stopPropagation();
+      }
+    });
     prompt.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
@@ -21337,14 +21477,17 @@
       }
       renderSwarmStrip(runs);
       agentLabRuns.textContent = "";
+      if (selectedRunId && !runs.some((run) => run.id === selectedRunId)) selectedRunId = "";
       if (!runs.length) {
         const empty = document.createElement("div");
         empty.className = "swarm-empty";
         empty.innerHTML = `<strong>No agent runs yet</strong><span>Select roles, describe one bounded task, and run the swarm.</span>`;
         agentLabRuns.append(empty);
+        renderArtifactInspector();
         return;
       }
       for (const run of runs) renderAgentRunCard(run);
+      renderArtifactInspector();
     }
     function renderSwarmStrip(runs) {
       const visible = runs.filter((item) => ["queued", "starting", "running", "failed"].includes(item.status) || item.worktree && item.worktree.lifecycle === "complete").slice(0, 8);
@@ -21357,7 +21500,8 @@
         chip.innerHTML = `<strong>${escapeHtml2(run.roleName)}</strong><span>${escapeHtml2(state.label)} \xB7 ${escapeHtml2(String(run.toolCallCount || 0))}/${escapeHtml2(String(run.maxToolCalls || "\u2014"))}</span>`;
         chip.addEventListener("click", () => {
           switchBoard("swarm");
-          document.querySelector(`[data-agent-run-id="${CSS.escape(run.id)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+          selectAgentRun(run.id);
+          document.querySelector(`[data-agent-run-id="${CSS.escape(run.id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
         });
         swarmStrip.append(chip);
       }
@@ -21365,38 +21509,216 @@
     function renderAgentRunCard(run) {
       const item = document.createElement("article");
       const state = displayRunStatus(run);
+      const sources = run.sources?.length ? run.sources : extractAgentSources(run);
       item.dataset.agentRunId = run.id;
       item.tabIndex = 0;
-      item.className = `agent-run ${state.className}`;
-      const resultHtml = run.result ? purify.sanitize(markdown.render(run.result)) : "";
-      const sourceCount = new Set((run.result || "").match(/https?:\/\/[^\s)\]}>]+/g) || []).size;
+      item.className = `agent-run ${state.className}${selectedRunId === run.id ? " selected" : ""}`;
+      item.setAttribute("aria-pressed", String(selectedRunId === run.id));
       const elapsed = run.durationMs ? `${Math.round(run.durationMs / 1e3)}s` : run.startedAt ? `${Math.max(0, Math.round((Date.now() - run.startedAt) / 1e3))}s` : "\u2014";
+      const sourceLabel = sourceSummary(sources);
       item.innerHTML = `<header class="agent-run-header"><div><strong>${escapeHtml2(run.roleName)}</strong><span class="agent-status ${state.className}">${escapeHtml2(state.label)}</span></div><span>${escapeHtml2(elapsed)}</span></header>
       <div class="agent-task">${escapeHtml2(run.task || "Task details unavailable for this older run.")}</div>
-      <div class="agent-metrics"><span title="Model">${escapeHtml2(shortModel(run.model))}</span><span title="Tool calls">${escapeHtml2(String(run.toolCallCount || 0))}/${escapeHtml2(String(run.maxToolCalls || "\u2014"))} tools</span><span title="Last tool">${escapeHtml2(run.lastTool || "no tool yet")}</span>${sourceCount ? `<span>${sourceCount} sources</span>` : ""}</div>
+      <div class="agent-metrics"><span title="Model">${escapeHtml2(shortModel(run.model))}</span><span title="Tool calls">${escapeHtml2(String(run.toolCallCount || 0))}/${escapeHtml2(String(run.maxToolCalls || "\u2014"))} tools</span><span title="Last tool">${escapeHtml2(run.lastTool || "no tool yet")}</span>${sourceLabel ? `<span>${escapeHtml2(sourceLabel)}</span>` : ""}${run.tokens ? `<span>${escapeHtml2(String(run.tokens))} tokens</span>` : ""}${typeof run.cost === "number" ? `<span>$${escapeHtml2(run.cost.toFixed(4))}</span>` : ""}</div>
       <div class="agent-progress">${escapeHtml2(run.progress || "Waiting")}</div>
       ${run.error ? `<div class="agent-error">${escapeHtml2(run.error)}</div>` : ""}
-      ${run.toolEvents?.length ? `<details class="agent-tool-breakdown"><summary>Tool trace</summary><div>${Object.entries(run.toolCounts || {}).map(([tool, count]) => `${escapeHtml2(tool)}: ${escapeHtml2(String(count))}`).join(" \xB7 ")}</div><div>${run.toolEvents.slice(-12).map((tool) => escapeHtml2(tool.tool)).join(" \u2192 ")}</div></details>` : ""}
-      ${resultHtml ? `<details class="agent-result" ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
-      ${run.worktree ? `<details class="agent-worktree" open><summary>Worktree \xB7 ${escapeHtml2(run.worktree.lifecycle)} \xB7 ${escapeHtml2(run.worktree.branch)}</summary>
-        <div class="agent-tools">${escapeHtml2(run.worktree.path)}</div>
-        ${run.validation ? `<div class="agent-validation ${run.validation.ok ? "ok" : "fail"}">Validation: ${run.validation.ok ? "passed" : "failed"} \u2014 ${escapeHtml2(run.validation.output.slice(-500))}</div>` : ""}
-        <div class="agent-files">${(run.changes || []).map((file) => `<label><input type="checkbox" data-agent-file="${escapeHtml2(file.path)}" checked> <code>${escapeHtml2(file.status)} ${escapeHtml2(file.path)}</code> <button data-agent-diff="${escapeHtml2(file.path)}">Diff</button></label>`).join("") || "No changes captured."}</div>
-        <div class="agent-actions"><button data-agent-review>Refresh changes</button><button data-agent-validate>Validate</button><button data-agent-apply>Apply selected</button><button data-agent-merge>Merge\u2026</button><button data-agent-cleanup>Clean up</button></div>
-      </details>` : ""}
-      <div class="agent-actions"><button data-agent-stop="${escapeHtml2(run.id)}" ${["succeeded", "failed", "cancelled"].includes(run.status) ? "disabled" : ""}>Stop</button><button data-agent-retry="${escapeHtml2(run.id)}">Retry</button></div>`;
-      item.querySelector("[data-agent-stop]")?.addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab", runId: run.id }));
-      item.querySelector("[data-agent-retry]")?.addEventListener("click", () => vscode.postMessage({ type: "retryAgentLab", runId: run.id }));
-      item.querySelector("[data-agent-review]")?.addEventListener("click", () => vscode.postMessage({ type: "reviewAgentWorktree", runId: run.id }));
-      item.querySelector("[data-agent-validate]")?.addEventListener("click", () => vscode.postMessage({ type: "validateAgentWorktree", runId: run.id, command: "" }));
-      item.querySelector("[data-agent-apply]")?.addEventListener("click", () => {
-        const paths = Array.from(item.querySelectorAll("[data-agent-file]:checked")).map((input) => input.dataset.agentFile || "");
-        vscode.postMessage({ type: "applyAgentPatch", runId: run.id, paths });
+      ${run.result ? `<div class="agent-preview">${escapeHtml2(previewText(run.result, 160) || "Open inspector for the full result.")}</div>` : ""}
+      ${run.worktree ? `<div class="agent-preview">Worktree ${escapeHtml2(run.worktree.lifecycle)} \xB7 ${escapeHtml2(String((run.changes || []).length))} files${run.validation ? ` \xB7 validation ${run.validation.ok ? "passed" : "failed"}` : ""}</div>` : ""}
+      <div class="agent-actions"><button data-agent-inspect>Inspect</button><button data-agent-stop="${escapeHtml2(run.id)}" ${["succeeded", "failed", "cancelled"].includes(run.status) ? "disabled" : ""}>Stop</button><button data-agent-retry="${escapeHtml2(run.id)}">Retry</button></div>`;
+      item.addEventListener("click", (event) => {
+        if (event.target.closest("button")) return;
+        selectAgentRun(run.id);
       });
-      item.querySelector("[data-agent-merge]")?.addEventListener("click", () => vscode.postMessage({ type: "mergeAgentWorktree", runId: run.id }));
-      item.querySelector("[data-agent-cleanup]")?.addEventListener("click", () => vscode.postMessage({ type: "cleanupAgentWorktree", runId: run.id }));
-      item.querySelectorAll("[data-agent-diff]").forEach((button) => button.addEventListener("click", () => vscode.postMessage({ type: "openAgentDiff", runId: run.id, path: button.dataset.agentDiff || "" })));
+      item.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectAgentRun(run.id);
+        }
+      });
+      item.querySelector("[data-agent-inspect]")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectAgentRun(run.id);
+      });
+      item.querySelector("[data-agent-stop]")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        vscode.postMessage({ type: "stopAgentLab", runId: run.id });
+      });
+      item.querySelector("[data-agent-retry]")?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        vscode.postMessage({ type: "retryAgentLab", runId: run.id });
+      });
       agentLabRuns.append(item);
+    }
+    function selectAgentRun(runId) {
+      selectedRunId = runId;
+      if (!runId) selectedInspectorTab = "result";
+      renderArtifactInspector();
+      agentLabRuns.querySelectorAll("[data-agent-run-id]").forEach((card) => {
+        const selected = card.dataset.agentRunId === runId;
+        card.classList.toggle("selected", selected);
+        card.setAttribute("aria-pressed", String(selected));
+      });
+    }
+    function renderArtifactInspector() {
+      const run = latestAgentRuns.find((item) => item.id === selectedRunId);
+      artifactInspector.classList.toggle("hidden", !run);
+      if (!run) {
+        inspectorTitle.textContent = "Artifacts";
+        inspectorMeta.textContent = "Select a run to inspect results, sources, and traces.";
+        inspectorTabs.textContent = "";
+        inspectorBody.textContent = "";
+        return;
+      }
+      const sources = run.sources?.length ? run.sources : extractAgentSources(run);
+      const tabs = inspectorTabList(run, sources);
+      if (!tabs.includes(selectedInspectorTab)) selectedInspectorTab = tabs[0] || "result";
+      inspectorTitle.textContent = run.roleName;
+      inspectorMeta.textContent = `${displayRunStatus(run).label} \xB7 ${shortModel(run.model)} \xB7 ${run.toolCallCount || 0}/${run.maxToolCalls || "\u2014"} tools`;
+      inspectorTabs.textContent = "";
+      for (const tab of tabs) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = inspectorTabLabel(tab, run, sources);
+        button.classList.toggle("active", tab === selectedInspectorTab);
+        button.setAttribute("aria-pressed", String(tab === selectedInspectorTab));
+        button.addEventListener("click", () => {
+          selectedInspectorTab = tab;
+          renderArtifactInspector();
+        });
+        inspectorTabs.append(button);
+      }
+      inspectorBody.textContent = "";
+      inspectorBody.append(renderInspectorSection(run, sources, selectedInspectorTab));
+    }
+    function inspectorTabList(run, sources) {
+      const tabs = ["result"];
+      if (sources.length) tabs.push("sources");
+      if (run.toolEvents?.length) tabs.push("trace");
+      if (run.worktree) tabs.push("worktree");
+      if (run.audit?.length) tabs.push("audit");
+      return tabs;
+    }
+    function inspectorTabLabel(tab, run, sources) {
+      if (tab === "sources") return `Sources (${sources.length})`;
+      if (tab === "trace") return `Trace (${run.toolEvents?.length || 0})`;
+      if (tab === "worktree") return `Worktree (${(run.changes || []).length})`;
+      if (tab === "audit") return `Audit (${run.audit?.length || 0})`;
+      return "Result";
+    }
+    function renderInspectorSection(run, sources, tab) {
+      const section = document.createElement("div");
+      section.className = "inspector-section";
+      if (tab === "sources") {
+        if (!sources.length) {
+          section.textContent = "No sources captured for this run.";
+          return section;
+        }
+        for (const source of sources) {
+          const card = document.createElement("article");
+          card.className = `source-card ${source.status} ${source.kind}`;
+          const title = document.createElement("strong");
+          title.textContent = source.title || source.url;
+          const meta = document.createElement("span");
+          meta.textContent = `${source.kind} \xB7 ${source.status}${source.tool ? ` \xB7 ${source.tool}` : ""}`;
+          const link2 = document.createElement("button");
+          link2.type = "button";
+          link2.className = "source-link";
+          link2.textContent = source.url;
+          link2.addEventListener("click", () => vscode.postMessage({ type: "openLink", href: source.url }));
+          card.append(title, meta, link2);
+          if (source.note) {
+            const note = document.createElement("small");
+            note.textContent = source.note;
+            card.append(note);
+          }
+          section.append(card);
+        }
+        return section;
+      }
+      if (tab === "trace") {
+        const counts = document.createElement("div");
+        counts.className = "inspector-note";
+        counts.textContent = Object.entries(run.toolCounts || {}).map(([tool, count]) => `${tool}: ${count}`).join(" \xB7 ") || "No tool counts.";
+        section.append(counts);
+        for (const event of run.toolEvents || []) {
+          const row = document.createElement("details");
+          row.className = `trace-row ${event.isError ? "failed" : event.status || ""}`;
+          const summary = document.createElement("summary");
+          summary.textContent = `${event.tool} \xB7 ${event.status || "tool"}`;
+          row.append(summary);
+          if (event.args && Object.keys(event.args).length) {
+            const args = document.createElement("pre");
+            args.textContent = pretty(event.args);
+            row.append(args);
+          }
+          if (event.result) {
+            const output = document.createElement("pre");
+            output.textContent = event.result;
+            row.append(output);
+          }
+          section.append(row);
+        }
+        return section;
+      }
+      if (tab === "worktree" && run.worktree) {
+        const summary = document.createElement("div");
+        summary.className = "inspector-note";
+        summary.textContent = `${run.worktree.lifecycle} \xB7 ${run.worktree.branch}`;
+        const path = document.createElement("code");
+        path.textContent = run.worktree.path;
+        section.append(summary, path);
+        if (run.validation) {
+          const validation = document.createElement("div");
+          validation.className = `agent-validation ${run.validation.ok ? "ok" : "fail"}`;
+          validation.textContent = `Validation: ${run.validation.ok ? "passed" : "failed"} \u2014 ${run.validation.output.slice(-500)}`;
+          section.append(validation);
+        }
+        const files = document.createElement("div");
+        files.className = "agent-files";
+        files.innerHTML = (run.changes || []).map((file) => `<label><input type="checkbox" data-agent-file="${escapeHtml2(file.path)}" checked> <code>${escapeHtml2(file.status)} ${escapeHtml2(file.path)}</code> <button type="button" data-agent-diff="${escapeHtml2(file.path)}">Diff</button></label>`).join("") || "No changes captured.";
+        const actions = document.createElement("div");
+        actions.className = "agent-actions";
+        actions.innerHTML = `<button type="button" data-agent-review>Refresh changes</button><button type="button" data-agent-validate>Validate</button><button type="button" data-agent-apply>Apply selected</button><button type="button" data-agent-merge>Merge\u2026</button><button type="button" data-agent-cleanup>Clean up</button>`;
+        actions.querySelector("[data-agent-review]")?.addEventListener("click", () => vscode.postMessage({ type: "reviewAgentWorktree", runId: run.id }));
+        actions.querySelector("[data-agent-validate]")?.addEventListener("click", () => vscode.postMessage({ type: "validateAgentWorktree", runId: run.id, command: "" }));
+        actions.querySelector("[data-agent-apply]")?.addEventListener("click", () => {
+          const paths = Array.from(files.querySelectorAll("[data-agent-file]:checked")).map((input) => input.dataset.agentFile || "");
+          vscode.postMessage({ type: "applyAgentPatch", runId: run.id, paths });
+        });
+        actions.querySelector("[data-agent-merge]")?.addEventListener("click", () => vscode.postMessage({ type: "mergeAgentWorktree", runId: run.id }));
+        actions.querySelector("[data-agent-cleanup]")?.addEventListener("click", () => vscode.postMessage({ type: "cleanupAgentWorktree", runId: run.id }));
+        files.querySelectorAll("[data-agent-diff]").forEach((button) => button.addEventListener("click", () => vscode.postMessage({ type: "openAgentDiff", runId: run.id, path: button.dataset.agentDiff || "" })));
+        section.append(files, actions);
+        return section;
+      }
+      if (tab === "audit") {
+        const list2 = document.createElement("ol");
+        list2.className = "audit-list";
+        for (const line of run.audit || []) {
+          const item = document.createElement("li");
+          item.textContent = line;
+          list2.append(item);
+        }
+        section.append(list2);
+        return section;
+      }
+      if (run.error) {
+        const error2 = document.createElement("div");
+        error2.className = "agent-error";
+        error2.textContent = run.error;
+        section.append(error2);
+      }
+      if (run.result) {
+        const result = document.createElement("div");
+        result.className = "markdown";
+        result.innerHTML = purify.sanitize(markdown.render(run.result));
+        section.append(result);
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "inspector-note";
+        empty.textContent = run.progress || "No result yet.";
+        section.append(empty);
+      }
+      return section;
     }
     function displayRunStatus(run) {
       if (run.worktree?.lifecycle === "complete") return { label: "Needs review", className: "attention" };

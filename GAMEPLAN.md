@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.9.0`
+- Version: `0.10.0`
 - Extension ID: `spacemanspiff-713.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -394,6 +394,17 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Preserve selected roles across telemetry rerenders.
 - [x] Keep worktree review/validation/patch/merge controls intact.
 - [x] Add DOM coverage for board navigation, swarm strip, task rendering, and run metrics.
+
+### Phase 5B.3 implementation — completed in v0.10.0
+
+- [x] Add a selected-run artifact inspector without changing Agent Lab orchestration.
+- [x] Slim run cards to task, status, metrics, preview, and inspect/stop/retry actions.
+- [x] Move long results, tool traces, worktree review, and audit logs into inspector tabs.
+- [x] Extract source/citation cards from tool fetch metadata and cited URLs.
+- [x] Tag sources as official, secondary, community, or failed.
+- [x] Preserve selected-run inspection across telemetry rerenders.
+- [x] Keep worktree review/validation/patch/merge controls on the selected run.
+- [x] Add unit and DOM coverage for source extraction and inspector tabs.
 
 ## Phase 5 — advanced studio backlog
 

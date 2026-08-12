@@ -7,6 +7,8 @@ import type { RpcRecord } from "../piRpcClient";
 import { PiRuntime, type PiRuntimeEvent } from "../runtime/piRuntime";
 import { agentAfterContent, agentBeforeContent, applyAgentPatch, captureAgentChanges, commitAgentWorktree, createAgentPatch, createAgentWorktree, mergeAgentBranch, removeAgentWorktree, validateAgentWorktree, worktreeExists, type AgentWorktree } from "./agentWorktreeManager";
 import type { ChangedFile } from "../changeReview";
+import { boundedToolArgs, extractAgentSources, toolResultText, type AgentSource } from "../agentArtifacts";
+export type { AgentSource } from "../agentArtifacts";
 
 export interface AgentRole {
   id: string;
@@ -39,12 +41,13 @@ export interface AgentRunSnapshot {
   durationMs?: number;
   startedAt?: number;
   finishedAt?: number;
-  toolEvents: Array<{ tool: string; status: string }>;
+  toolEvents: Array<{ id?: string; tool: string; status: string; args?: Record<string, unknown>; result?: string; isError?: boolean }>;
   toolCounts: Record<string, number>;
   toolCallCount: number;
   maxToolCalls: number;
   maxDurationMs: number;
   lastTool?: string;
+  sources?: AgentSource[];
   worktree?: { root: string; path: string; branch: string; baseCommit: string; baselineStatus: string; lifecycle: "active" | "complete" | "integrated" | "abandoned" | "cleaned"; createdAt: number };
   changes?: ChangedFile[];
   validation?: { ok: boolean; output: string };
@@ -310,13 +313,8 @@ export class AgentLabController implements vscode.Disposable {
           result = `${result}${delta}`.slice(-64_000);
           item.run.result = result;
         }
-        const tool = toolName(event.record);
+        const tool = applyToolRecord(item.run, event.record);
         if (tool) {
-          item.run.toolCallCount += 1;
-          item.run.toolCounts[tool] = (item.run.toolCounts[tool] ?? 0) + 1;
-          item.run.lastTool = tool;
-          item.run.toolEvents.push({ tool, status: String(event.record.type ?? "tool") });
-          item.run.toolEvents = item.run.toolEvents.slice(-80);
           const codingViolation = writing ? unsafeCodingTool(event.record, entry.worktree!) : undefined;
           const toolViolation = !item.role.tools.includes(tool) ? `Tool not allowed for ${item.role.name}: ${tool}` : undefined;
           const capViolation = item.run.toolCallCount > item.run.maxToolCalls ? `Agent exceeded tool-call cap (${item.run.maxToolCalls})` : undefined;
@@ -426,7 +424,10 @@ export class AgentLabController implements vscode.Disposable {
   }
 
   private snapshots(): AgentRunSnapshot[] {
-    return Array.from(this.runs.values()).map((entry) => entry.snapshot).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+    return Array.from(this.runs.values()).map((entry) => {
+      entry.snapshot.sources = extractAgentSources(entry.snapshot);
+      return entry.snapshot;
+    }).sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
   }
 
   private publish(): void {
@@ -524,6 +525,34 @@ function extractTextDelta(record: RpcRecord): string {
   if (record.type !== "message_update") return "";
   const event = record.assistantMessageEvent as Record<string, unknown> | undefined;
   return event?.type === "text_delta" && typeof event.delta === "string" ? event.delta : "";
+}
+
+function applyToolRecord(run: AgentRunSnapshot, record: RpcRecord): string | undefined {
+  const id = typeof record.toolCallId === "string" ? record.toolCallId : undefined;
+  if (record.type === "tool_execution_start") {
+    const tool = typeof record.toolName === "string" ? record.toolName : undefined;
+    if (!tool) return undefined;
+    run.toolCallCount += 1;
+    run.toolCounts[tool] = (run.toolCounts[tool] ?? 0) + 1;
+    run.lastTool = tool;
+    run.toolEvents.push({
+      id,
+      tool,
+      status: "running",
+      args: boundedToolArgs(record.args),
+    });
+    run.toolEvents = run.toolEvents.slice(-80);
+    return tool;
+  }
+  if (record.type === "tool_execution_end" && id) {
+    const existing = [...run.toolEvents].reverse().find((event) => event.id === id);
+    if (existing) {
+      existing.status = record.isError === true ? "failed" : "done";
+      existing.isError = record.isError === true;
+      existing.result = toolResultText(record.result).slice(0, 4_000);
+    }
+  }
+  return undefined;
 }
 
 function toolName(record: RpcRecord): string | undefined {
