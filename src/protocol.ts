@@ -106,7 +106,8 @@ export type WebviewToHostMessage =
   | { type: "retryRuntime" }
   | { type: "compactSession" }
   | { type: "reloadSession" }
-  | { type: "openResources" };
+  | { type: "openResources" }
+  | { type: "extensionUiResponse"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
 
 export type HostToWebviewMessage =
   | { type: "connection"; status: string; message: string }
@@ -129,6 +130,7 @@ export type HostToWebviewMessage =
   | { type: "error"; message: string }
   | { type: "extensionStatus"; key: unknown; text: unknown }
   | { type: "widget"; key: unknown; lines: string[] }
+  | { type: "extensionUiRequest"; id: string; method: "select" | "confirm" | "input" | "editor"; title: string; message?: string; placeholder?: string; prefill?: string; options?: string[] }
   | { type: "prefill"; text: unknown }
   | { type: "changeSet"; changeSet: ChangeSet }
   | { type: "showChanges"; changeSet: ChangeSet }
@@ -163,6 +165,12 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
     return query === undefined || requestId === undefined
       ? undefined
       : { type: value.type, query, requestId };
+  }
+  if (value.type === "extensionUiResponse") {
+    const id = boundedString(value.id, 256);
+    const response = optionalBoundedString(value.value, 2 * 1024 * 1024);
+    return id === undefined || response === undefined || (value.confirmed !== undefined && typeof value.confirmed !== "boolean") || (value.cancelled !== undefined && typeof value.cancelled !== "boolean")
+      ? undefined : { type: value.type, id, value: response || undefined, confirmed: value.confirmed as boolean | undefined, cancelled: value.cancelled as boolean | undefined };
   }
   if (value.type === "mcpAction") {
     const action = boundedString(value.action, 64);

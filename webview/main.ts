@@ -62,6 +62,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const contextMenu = document.getElementById("context-menu");
   const queue = document.getElementById("queue");
   const widget = document.getElementById("widget");
+  const extensionRequest = document.getElementById("extension-request");
   const jump = document.getElementById("jump");
   const changesButton = document.getElementById("changes");
   const changeSummary = document.getElementById("change-summary");
@@ -197,6 +198,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
         if (data.requestId === latestContextRequest) renderContextMenu(data.items || []);
         break;
       case "state": updateState(data); break;
+      case "extensionUiRequest": renderExtensionRequest(data); break;
       case "sessionStats": renderSessionStats(data.stats); break;
       case "clear":
         transcript.textContent = "";
@@ -307,6 +309,24 @@ markdown.renderer.rules.fence = (tokens, index) => {
 
   function formatCount(value) {
     return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : String(value);
+  }
+
+  function renderExtensionRequest(request) {
+    extensionRequest.textContent = "";
+    const title = document.createElement("strong"); title.textContent = request.title; extensionRequest.append(title);
+    if (request.message) { const message = document.createElement("p"); message.textContent = request.message; extensionRequest.append(message); }
+    const form = document.createElement("div"); form.className = "panel-toolbar";
+    const respond = (response) => { vscode.postMessage({ type: "extensionUiResponse", id: request.id, ...response }); extensionRequest.classList.add("hidden"); };
+    if (request.method === "select") {
+      for (const option of request.options || []) { const button = document.createElement("button"); button.textContent = option; button.addEventListener("click", () => respond({ value: option })); form.append(button); }
+    } else if (request.method === "confirm") {
+      const yes = document.createElement("button"); yes.textContent = "Confirm"; yes.addEventListener("click", () => respond({ confirmed: true })); form.append(yes);
+    } else {
+      const input = document.createElement(request.method === "editor" ? "textarea" : "input"); input.value = request.prefill || ""; input.placeholder = request.placeholder || ""; if (request.method === "editor") (input as HTMLTextAreaElement).rows = 5;
+      const submit = document.createElement("button"); submit.textContent = "Submit"; submit.addEventListener("click", () => respond({ value: input.value })); form.append(input, submit);
+    }
+    const cancel = document.createElement("button"); cancel.textContent = "Cancel"; cancel.addEventListener("click", () => respond({ cancelled: true })); form.append(cancel);
+    extensionRequest.append(form); extensionRequest.classList.remove("hidden");
   }
 
   function setBusy(value) {

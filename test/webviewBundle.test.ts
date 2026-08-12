@@ -7,7 +7,7 @@ const shell = `<!doctype html><html><body>
   <span id="status-dot"></span><button id="model"></button><button id="thinking"></button><span id="session-stats"></span>
   <div id="banner"></div>
   <section id="runtime-health"><strong id="runtime-health-title"></strong><p id="runtime-health-message"></p><div id="runtime-health-details"></div><button id="runtime-trust"></button><button id="runtime-settings"></button><button id="runtime-retry"></button></section>
-  <div id="widget"></div><div id="change-summary"></div><main id="transcript"></main>
+  <div id="widget"></div><section id="extension-request"></section><div id="change-summary"></div><main id="transcript"></main>
   <div id="jump" class="hidden"><button>Jump</button></div>
   <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
   <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>

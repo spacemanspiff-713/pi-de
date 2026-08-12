@@ -354,6 +354,9 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       case "openResources":
         await this.resources.open();
         break;
+      case "extensionUiResponse":
+        this.extensionUi.respond(message.id, message);
+        break;
     }
   }
 
@@ -809,6 +812,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     </div>
   </section>
   <div id="widget" class="widget hidden"></div>
+  <section id="extension-request" class="control-panel hidden" aria-live="assertive"></section>
   <div id="change-summary" class="change-summary hidden"></div>
   <main id="transcript" aria-live="polite"></main>
   <div id="jump" class="jump hidden"><button>Jump to latest</button></div>
