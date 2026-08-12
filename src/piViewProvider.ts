@@ -127,6 +127,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   async openAgentLab(): Promise<void> {
     await this.reveal();
     await this.agentLab.open();
+    this.post({ type: "showAgentLab" });
   }
 
   async reviewChanges(): Promise<void> {
@@ -394,6 +395,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         break;
       case "openAgentLab":
         await this.agentLab.open();
+        this.post({ type: "showAgentLab" });
         break;
       case "refreshAgentLab":
         await this.agentLab.refresh();
@@ -933,6 +935,13 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     <button id="thinking" class="selector">thinking: —</button>
     <span id="session-stats" class="session-stats" title="Session context usage">context: —</span>
   </section>
+  <nav id="board-nav" class="board-nav" aria-label="PiDE workspace views">
+    <button class="active" data-board="chat" aria-pressed="true">Chat</button>
+    <button data-board="swarm" aria-pressed="false">Swarm</button>
+    <button data-board-action="changes">Changes</button>
+    <button data-board-action="mcp">MCP</button>
+  </nav>
+  <section id="swarm-strip" class="swarm-strip hidden" aria-label="Agent swarm status" aria-live="polite"></section>
   <div id="banner" class="banner">Starting Pi…</div>
   <section id="runtime-health" class="runtime-health hidden" aria-live="polite">
     <strong id="runtime-health-title">Pi runtime unavailable</strong>
@@ -947,20 +956,27 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   <div id="widget" class="widget hidden"></div>
   <section id="extension-request" class="control-panel hidden" aria-live="assertive"></section>
   <div id="change-summary" class="change-summary hidden"></div>
-  <main id="transcript" aria-live="polite"></main>
-  <div id="jump" class="jump hidden"><button>Jump to latest</button></div>
+  <section id="board-content" class="board-content">
+    <section id="chat-board" class="board-view active" aria-label="Commander chat">
+      <main id="transcript" aria-live="polite"></main>
+      <div id="jump" class="jump hidden"><button>Jump to latest</button></div>
+    </section>
+    <section id="agent-lab-panel" class="board-view swarm-board hidden" aria-label="Agent swarm board">
+      <header class="board-header"><div><strong>Agent Swarm</strong><span>Plan, research, review, and implement in controlled lanes.</span></div><button id="agent-lab-refresh">Refresh</button></header>
+      <div id="agent-lab-summary" class="panel-summary">Agent roles are ready.</div>
+      <section class="swarm-dispatch">
+        <textarea id="agent-lab-task" rows="4" placeholder="Describe one task for the selected agents…" aria-label="Agent swarm task"></textarea>
+        <div class="panel-toolbar"><button id="agent-lab-run">Run selected</button><button id="agent-lab-stop">Stop all</button></div>
+      </section>
+      <details class="role-roster" open><summary>Role roster</summary><div id="agent-lab-roles" class="panel-list compact"></div></details>
+      <div class="panel-section-title">Agent lanes</div>
+      <div id="agent-lab-runs" class="agent-run-list"></div>
+    </section>
+  </section>
   <section id="changes-panel" class="control-panel hidden" aria-label="PiDE changes">
     <header><strong>PiDE Changes</strong><button data-close-panel="changes-panel">×</button></header>
     <div id="changes-totals" class="panel-summary"></div>
     <div id="changes-list" class="panel-list"></div>
-  </section>
-  <section id="agent-lab-panel" class="control-panel hidden" aria-label="Agent Lab">
-    <header><strong>Agent Lab</strong><button data-close-panel="agent-lab-panel">×</button></header>
-    <div id="agent-lab-summary" class="panel-summary">Read-only subagents are ready.</div>
-    <textarea id="agent-lab-task" rows="4" placeholder="Ask selected read-only subagents to investigate…"></textarea>
-    <div id="agent-lab-roles" class="panel-list compact"></div>
-    <div class="panel-toolbar"><button id="agent-lab-run">Run selected</button><button id="agent-lab-stop">Stop all</button><button id="agent-lab-refresh">Refresh</button></div>
-    <div id="agent-lab-runs" class="panel-list"></div>
   </section>
   <section id="mcp-panel" class="control-panel hidden" aria-label="MCP control center">
     <header><strong>MCP Control Center</strong><button data-close-panel="mcp-panel">×</button></header>

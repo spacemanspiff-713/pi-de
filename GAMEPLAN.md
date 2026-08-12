@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.8.0`
+- Version: `0.9.0`
 - Extension ID: `spacemanspiff-713.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -381,6 +381,19 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Define styling, accessibility, theming, and stable-API constraints.
 - [x] Split the implementation plan into 5B.1–5B.6 with 5B.1/5B.2 as the recommended first build slice.
 - [x] Record open product questions and non-goals.
+
+### Phase 5B.1 / 5B.2 implementation — completed in v0.9.0
+
+- [x] Verify discovery recommendations against current DOM, narrow sidebar limits, existing Agent Lab behavior, and VS Code webview guidance.
+- [x] Correct the plan so empty swarm chrome auto-hides instead of wasting vertical space.
+- [x] Correct the plan so Changes/MCP route to existing overlays until dedicated Artifacts/System views exist.
+- [x] Stop background Agent Lab telemetry from forcing Swarm open or stealing focus.
+- [x] Add Chat / Swarm board navigation.
+- [x] Add a compact swarm strip for active, failed, and review-ready agents.
+- [x] Redesign run cards around task, status, elapsed time, model, tool cap, last tool, sources, progress, failure, result, and actions.
+- [x] Preserve selected roles across telemetry rerenders.
+- [x] Keep worktree review/validation/patch/merge controls intact.
+- [x] Add DOM coverage for board navigation, swarm strip, task rendering, and run metrics.
 
 ## Phase 5 — advanced studio backlog
 
