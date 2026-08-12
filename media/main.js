@@ -20996,6 +20996,7 @@
     const prompt = document.getElementById("prompt");
     const banner = document.getElementById("banner");
     const statusDot = document.getElementById("status-dot");
+    const sessionTabs = document.getElementById("session-tabs");
     const modelButton = document.getElementById("model");
     const thinkingButton = document.getElementById("thinking");
     const sessionStats = document.getElementById("session-stats");
@@ -21151,6 +21152,9 @@
         case "sessionStats":
           renderSessionStats(data.stats);
           break;
+        case "sessionTabs":
+          renderSessionTabs(data.tabs || []);
+          break;
         case "clear":
           transcript.textContent = "";
           tools.clear();
@@ -21257,6 +21261,25 @@
       statusDot.className = `status-dot ${status || ""}`;
       banner.textContent = message || "";
       banner.classList.toggle("hidden", status === "ready");
+    }
+    function renderSessionTabs(tabs) {
+      sessionTabs.textContent = "";
+      sessionTabs.classList.toggle("hidden", tabs.length <= 1);
+      for (const tab of tabs) {
+        const button = document.createElement("button");
+        button.className = `session-tab ${tab.active ? "active" : ""} ${tab.unread ? "unread" : ""}`;
+        button.textContent = `${tab.status === "working" ? "\u25CF " : ""}${tab.title || "Session"}`;
+        button.title = `${tab.status}${tab.unread ? " \xB7 unread" : ""}`;
+        button.addEventListener("click", () => vscode.postMessage({ type: "activateTab", id: tab.id }));
+        const close = document.createElement("span");
+        close.textContent = " \xD7";
+        close.addEventListener("click", (event) => {
+          event.stopPropagation();
+          vscode.postMessage({ type: "closeTab", id: tab.id });
+        });
+        button.append(close);
+        sessionTabs.append(button);
+      }
     }
     function updateState(state) {
       const model = state.model || {};

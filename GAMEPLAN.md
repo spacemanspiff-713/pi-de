@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.3.2`
+- Version: `0.5.0`
 - Extension ID: `pidaddylabs.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -273,32 +273,31 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Add reusable todo/status widgets.
 - [x] Keep native VS Code dialogs as fallback.
 
-## Phase 2 — v0.5 persistent multi-session workspace
+## Phase 2 — v0.5 persistent multi-session workspace — completed in v0.5.0
 
-- [ ] Introduce a `PiRuntimeManager` owning multiple session runtimes.
-- [ ] Add persistent open-session tabs.
-- [ ] Restore open tabs after VS Code reload.
-- [ ] Lazily start dormant session sidecars.
-- [ ] Keep actively streaming background sessions alive.
-- [ ] Display background progress and completion badges.
-- [ ] Add unread indicators.
-- [ ] Prevent duplicate sidecars for one session.
-- [ ] Add a configurable maximum number of active runtimes.
-- [ ] Suspend idle runtimes without closing their session tabs.
-- [ ] Scope prompt queues to each session.
-- [ ] Scope change sets/checkpoints to each session/task.
-- [ ] Allow a session to open in an editor-area panel.
-- [ ] Support optional side-by-side session views.
-- [ ] Implement a workspace write lease for non-isolated runtimes.
-- [ ] Run waiting sessions read-only or queue them while another session owns the write lease.
+- [x] Introduce a `PiRuntimeManager` owning multiple session runtimes.
+- [x] Add persistent open-session tabs.
+- [x] Restore open tabs after VS Code reload.
+- [x] Lazily start dormant session sidecars.
+- [x] Keep actively streaming background sessions alive.
+- [x] Display background progress and completion badges.
+- [x] Add unread indicators.
+- [x] Prevent duplicate sidecars for one session.
+- [x] Add a configurable maximum number of active runtimes.
+- [x] Suspend idle runtimes without closing their session tabs.
+- [x] Scope prompt queues to each session.
+- [x] Scope change sets/checkpoints to each session/task.
+- [~] Editor-area and optional side-by-side views remain deferred to avoid proposed VS Code APIs and keep the stable Activity Bar UI authoritative.
+- [x] Implement a workspace write lease for non-isolated runtimes.
+- [x] Run waiting sessions read-only or queue them while another session owns the write lease.
 
 ### Exit criteria
 
-- [ ] Two sessions can stream independently.
-- [ ] VS Code reload restores the session layout.
-- [ ] Background completion is visible.
-- [ ] Concurrent root-workspace writes are prevented.
-- [ ] Each session has independent state, queue, and change review.
+- [x] Two sessions can stream independently through separate managed runtimes.
+- [x] VS Code reload restores the session layout.
+- [x] Background completion is visible through tab state and unread badges.
+- [x] Concurrent root-workspace writes are prevented by the workspace write lease.
+- [x] Each session has independent runtime state and prompt queue; change review remains scoped to the active task/session checkpoint.
 
 ## Phase 3 — v0.6 Agent Lab MVP
 

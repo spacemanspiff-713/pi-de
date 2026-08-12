@@ -49,6 +49,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const prompt = document.getElementById("prompt") as HTMLTextAreaElement;
   const banner = document.getElementById("banner");
   const statusDot = document.getElementById("status-dot");
+  const sessionTabs = document.getElementById("session-tabs");
   const modelButton = document.getElementById("model");
   const thinkingButton = document.getElementById("thinking");
   const sessionStats = document.getElementById("session-stats");
@@ -200,6 +201,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
       case "state": updateState(data); break;
       case "extensionUiRequest": renderExtensionRequest(data); break;
       case "sessionStats": renderSessionStats(data.stats); break;
+      case "sessionTabs": renderSessionTabs(data.tabs || []); break;
       case "clear":
         transcript.textContent = "";
         tools.clear();
@@ -283,6 +285,23 @@ markdown.renderer.rules.fence = (tokens, index) => {
     statusDot.className = `status-dot ${status || ""}`;
     banner.textContent = message || "";
     banner.classList.toggle("hidden", status === "ready");
+  }
+
+  function renderSessionTabs(tabs) {
+    sessionTabs.textContent = "";
+    sessionTabs.classList.toggle("hidden", tabs.length <= 1);
+    for (const tab of tabs) {
+      const button = document.createElement("button");
+      button.className = `session-tab ${tab.active ? "active" : ""} ${tab.unread ? "unread" : ""}`;
+      button.textContent = `${tab.status === "working" ? "● " : ""}${tab.title || "Session"}`;
+      button.title = `${tab.status}${tab.unread ? " · unread" : ""}`;
+      button.addEventListener("click", () => vscode.postMessage({ type: "activateTab", id: tab.id }));
+      const close = document.createElement("span");
+      close.textContent = " ×";
+      close.addEventListener("click", (event) => { event.stopPropagation(); vscode.postMessage({ type: "closeTab", id: tab.id }); });
+      button.append(close);
+      sessionTabs.append(button);
+    }
   }
 
   function updateState(state) {
