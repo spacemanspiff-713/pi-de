@@ -71,7 +71,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       post,
       () => this.refreshCommands(),
     );
-    this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp, new VscodeContextController());
+    this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp, new VscodeContextController(), () => Boolean(this.view));
     this.resources = new ResourceController(folder, () => this.runtime.health, () => this.restart(), output);
     this.unsubscribeRuntime = this.runtime.onEvent((event) => void this.handleRuntimeEvent(event));
   }
@@ -382,6 +382,9 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     }
 
     const message = await this.withMentionedContexts(prompt);
+    if (!this.state.sessionName && this.state.sessionFile) {
+      void client.request({ type: "set_session_name", name: prompt.replace(/\s+/g, " ").slice(0, 72) }).then(() => this.refreshState()).catch(() => undefined);
+    }
     this.post({ type: "userPrompt", text: prompt });
     this.post({ type: "busy", value: true });
 

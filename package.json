@@ -2,7 +2,7 @@
   "name": "pide",
   "displayName": "PiDE",
   "description": "Pi Development Environment: a dedicated VS Code interface for the Pi coding agent.",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "publisher": "pidaddylabs",
   "private": true,
   "license": "MIT",

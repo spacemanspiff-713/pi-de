@@ -129,6 +129,12 @@ export class SessionController {
       await this.exportSession(session);
       return;
     }
+    if (action === "open in pi terminal") {
+      const configured = vscode.workspace.getConfiguration("pide").get<string>("executablePath", "pi");
+      const executable = await resolvePiExecutable({ configured });
+      vscode.window.createTerminal({ name: `Pi: ${session.name || shortId(session.id)}`, cwd: session.cwd, shellPath: executable, shellArgs: ["--session", session.file] }).show();
+      return;
+    }
     if (action === "resume") {
       await this.switchTo(session.file);
       return;
@@ -253,6 +259,7 @@ export class SessionController {
       copyPath: { iconPath: new vscode.ThemeIcon("copy"), tooltip: "Copy Path" },
       openFile: { iconPath: new vscode.ThemeIcon("go-to-file"), tooltip: "Open File" },
       exportHtml: { iconPath: new vscode.ThemeIcon("export"), tooltip: "Export HTML" },
+      terminal: { iconPath: new vscode.ThemeIcon("terminal"), tooltip: "Open in Pi Terminal" },
       delete: { iconPath: new vscode.ThemeIcon("trash"), tooltip: "Delete" },
     } satisfies Record<string, vscode.QuickInputButton>;
     const picker = vscode.window.createQuickPick<SessionItem>();
@@ -271,12 +278,12 @@ export class SessionController {
         label: `${preferences.pinned.includes(session.file) ? "$(pin) " : ""}${preferences.favorites.includes(session.file) ? "$(star-full) " : ""}${session.name || firstLine(session.preview) || `Pi session ${shortId(session.id)}`}`,
         description: [
           session.file === this.dependencies.state().sessionFile
-            ? "$(circle-filled) Current"
+            ? this.dependencies.state().isStreaming ? "$(sync~spin) Working" : "$(circle-outline) Idle"
             : session.archived ? "Archived" : relativeTime(session.updatedAt),
           session.model,
         ].filter(Boolean).join(" · "),
         detail: `${session.preview.replace(/\n/g, " ")}  —  ${session.messageCount} messages · ${formatTokens(session.tokens)} tokens · $${session.cost.toFixed(4)}`,
-        buttons: [buttons.pin, buttons.favorite, buttons.rename, buttons.fork, buttons.clone, buttons.copyId, buttons.copyPath, buttons.openFile, buttons.exportHtml, session.archived ? buttons.restore : buttons.archive, buttons.delete],
+        buttons: [buttons.pin, buttons.favorite, buttons.rename, buttons.fork, buttons.clone, buttons.copyId, buttons.copyPath, buttons.openFile, buttons.exportHtml, buttons.terminal, session.archived ? buttons.restore : buttons.archive, buttons.delete],
         alwaysShow: true,
         session,
       }));

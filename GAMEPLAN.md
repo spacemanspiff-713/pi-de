@@ -212,7 +212,7 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Trust/runtime failures have actionable onboarding UI.
 - [x] New runtime, protocol, session, change, MCP, and extension-UI subsystems can be exercised without constructing the entire view provider.
 
-## Phase 1 — v0.4 low-hanging fruit
+## Phase 1 — v0.4 low-hanging fruit — completed in v0.4.0
 
 ### Session improvements
 
@@ -224,10 +224,10 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Add compact-session action.
 - [x] Add reload-context action.
 - [x] Show auto-compaction and auto-retry state.
-- [ ] Add running/idle/unread badges.
+- [x] Add running/idle badges. Unread badges are a Phase 2 background-session feature.
 - [x] Persist session filters and sorting.
-- [ ] Improve automatic session display names.
-- [ ] Add “Open in Pi terminal.”
+- [x] Improve automatic session display names.
+- [x] Add “Open in Pi terminal.”
 
 ### Runtime and resource control center
 
@@ -266,12 +266,12 @@ Goal: make the current implementation modular enough to support multiple runtime
 
 ### Extension UI
 
-- [ ] Render selection requests inline.
-- [ ] Render confirmation requests inline.
-- [ ] Render text/editor input inline.
-- [ ] Render multi-question questionnaires inline.
-- [ ] Add reusable todo/status widgets.
-- [ ] Keep native VS Code dialogs as fallback.
+- [x] Render selection requests inline.
+- [x] Render confirmation requests inline.
+- [x] Render text/editor input inline.
+- [x] Render multi-question questionnaires inline as a structured editor response.
+- [x] Add reusable todo/status widgets.
+- [x] Keep native VS Code dialogs as fallback.
 
 ## Phase 2 — v0.5 persistent multi-session workspace
 

@@ -6,7 +6,7 @@ A dedicated, independent VS Code development environment powered by the real [Pi
 
 PiDE gives Pi a first-class home in the editor: streaming conversations, native change review, searchable sessions, rich context attachments, and MCP controls—without replacing Pi's runtime or creating a separate configuration silo.
 
-> **Project status:** Early open-source release. v0.3.2 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+> **Project status:** Early open-source release. v0.4.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## Why this project exists
 
@@ -147,7 +147,7 @@ git clone https://github.com/spacemanspiff-713/pi-de.git
 cd pi-de
 npm install
 npm run package
-code --install-extension pide-0.3.2.vsix --force
+code --install-extension pide-0.4.0.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.
