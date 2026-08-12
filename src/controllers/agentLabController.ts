@@ -100,6 +100,10 @@ export class AgentLabController implements vscode.Disposable {
     await this.open();
   }
 
+  async roleIds(): Promise<string[]> {
+    return (await this.discoverRoles()).map((role) => role.id);
+  }
+
   async run(roleIds: string[], task: string): Promise<void> {
     const roles = await this.discoverRoles();
     const selected = roles.filter((role) => roleIds.includes(role.id));

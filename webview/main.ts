@@ -12,12 +12,13 @@ import type {
 } from "../src/protocol";
 import type { ChangeSet } from "../src/changeReview";
 import { extractAgentSources, previewText, sourceSummary, type AgentSource } from "../src/agentArtifacts";
+import { DISPATCH_PRESETS, dispatchPreset, dispatchSummary, fallbackDispatchRoles, parseDispatchMode, resolveDispatchRoles } from "../src/dispatch";
 import { renderRuntimeHealth } from "./runtimeHealth";
 
 interface VsCodeApi {
   postMessage(message: WebviewToHostMessage): void;
-  getState(): { draft?: string } | undefined;
-  setState(state: { draft?: string }): void;
+  getState(): { draft?: string; dispatchMode?: string; includePi?: boolean; roleIds?: string[] } | undefined;
+  setState(state: { draft?: string; dispatchMode?: string; includePi?: boolean; roleIds?: string[] }): void;
 }
 
 declare function acquireVsCodeApi(): VsCodeApi;
@@ -64,6 +65,11 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const sendButton = document.getElementById("send") as HTMLButtonElement;
   const stopButton = document.getElementById("stop") as HTMLButtonElement;
   const attachButton = document.getElementById("attach") as HTMLButtonElement;
+  const dispatchMode = document.getElementById("dispatch-mode") as HTMLSelectElement;
+  const dispatchIncludePi = document.getElementById("dispatch-include-pi") as HTMLInputElement;
+  const dispatchRoles = document.getElementById("dispatch-roles");
+  const dispatchShortcuts = document.getElementById("dispatch-shortcuts");
+  const dispatchSummaryLabel = document.getElementById("dispatch-summary");
   const contextChips = document.getElementById("context-chips");
   const commandMenu = document.getElementById("command-menu");
   const contextMenu = document.getElementById("context-menu");
@@ -121,6 +127,10 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const pendingRenders = new Set<HTMLElement>();
   const persisted = vscode.getState() || {};
   if (typeof persisted.draft === "string") prompt.value = persisted.draft;
+  let selectedDispatchMode = parseDispatchMode(persisted.dispatchMode);
+  let includePi = persisted.includePi !== false;
+  let selectedRoleIds = Array.isArray(persisted.roleIds) ? persisted.roleIds : [];
+  let applyingDispatchPreset = false;
 
   document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
   document.getElementById("resources").addEventListener("click", () => vscode.postMessage({ type: "openResources" }));
@@ -156,9 +166,16 @@ markdown.renderer.rules.fence = (tokens, index) => {
   sendButton.addEventListener("click", send);
   attachButton.addEventListener("click", () => insertAtCursor("@"));
   jump.querySelector("button").addEventListener("click", () => scrollToBottom(true));
+  dispatchMode.addEventListener("change", () => applyDispatchPreset(parseDispatchMode(dispatchMode.value), true));
+  dispatchIncludePi.addEventListener("change", () => {
+    includePi = dispatchIncludePi.checked;
+    persistComposer();
+    updateDispatchSummary();
+  });
+  renderDispatchChrome();
 
   prompt.addEventListener("input", () => {
-    vscode.setState({ ...persisted, draft: prompt.value });
+    persistComposer();
     updateCommandMenu();
     updateContextSearch();
     updateContextChips();
@@ -300,9 +317,17 @@ markdown.renderer.rules.fence = (tokens, index) => {
   function send() {
     const text = prompt.value.trim();
     if (!text) return;
-    vscode.postMessage({ type: "prompt", text });
+    const slash = text.startsWith("/");
+    const roleIds = slash ? [] : resolveDispatchRoles(selectedRoleIds, latestAgentRoles.map((role) => role.id));
+    vscode.postMessage({
+      type: "dispatch",
+      text,
+      includePi: slash || includePi || !roleIds.length,
+      roleIds,
+      mode: selectedDispatchMode,
+    });
     prompt.value = "";
-    vscode.setState({ ...persisted, draft: "" });
+    persistComposer();
     commandMenu.classList.add("hidden");
     contextMenu.classList.add("hidden");
     updateContextChips();
@@ -325,7 +350,97 @@ markdown.renderer.rules.fence = (tokens, index) => {
 
   function runAgentLab() {
     const roleIds = Array.from(agentLabRoles.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")).map((input) => input.value);
+    selectedRoleIds = roleIds;
+    persistComposer();
     vscode.postMessage({ type: "runAgentLab", roleIds, task: agentLabTask.value });
+  }
+
+  function persistComposer() {
+    Object.assign(persisted, { draft: prompt.value, dispatchMode: selectedDispatchMode, includePi, roleIds: selectedRoleIds });
+    vscode.setState(persisted);
+  }
+
+  function renderDispatchChrome() {
+    dispatchMode.textContent = "";
+    for (const preset of DISPATCH_PRESETS) {
+      const option = document.createElement("option");
+      option.value = preset.mode;
+      option.textContent = preset.label;
+      dispatchMode.append(option);
+    }
+    dispatchMode.value = selectedDispatchMode;
+    dispatchIncludePi.checked = includePi;
+    dispatchShortcuts.textContent = "";
+    for (const item of [{ label: "@selection", token: "@selection" }, { label: "@problems", token: "@problems" }, { label: "@git-diff", token: "@git-diff" }]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = item.label;
+      button.addEventListener("click", () => insertAtCursor(`${item.token} `));
+      dispatchShortcuts.append(button);
+    }
+    applyDispatchPreset(selectedDispatchMode, false);
+  }
+
+  function applyDispatchPreset(mode: string, fromUser: boolean) {
+    const preset = dispatchPreset(mode);
+    selectedDispatchMode = preset.mode;
+    applyingDispatchPreset = true;
+    if (fromUser || !selectedRoleIds.length) {
+      includePi = preset.includePi;
+      selectedRoleIds = fallbackDispatchRoles(preset.mode, latestAgentRoles);
+    }
+    dispatchMode.value = preset.mode;
+    dispatchIncludePi.checked = includePi;
+    prompt.placeholder = preset.placeholder;
+    prompt.setAttribute("aria-label", includePi || !selectedRoleIds.length ? "Message Pi" : `Dispatch ${preset.label.toLowerCase()} task`);
+    renderDispatchRoles();
+    syncRosterFromDispatch();
+    persistComposer();
+    applyingDispatchPreset = false;
+    updateDispatchSummary();
+  }
+
+  function renderDispatchRoles() {
+    dispatchRoles.textContent = "";
+    const available = latestAgentRoles.slice(0, 10);
+    if (!available.length) {
+      const empty = document.createElement("span");
+      empty.className = "dispatch-empty";
+      empty.textContent = "Roles load with Pi.";
+      dispatchRoles.append(empty);
+      updateDispatchSummary();
+      return;
+    }
+    selectedRoleIds = available.length ? resolveDispatchRoles(selectedRoleIds, available.map((role) => role.id)) : selectedRoleIds;
+    for (const role of available) {
+      const label = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.value = role.id;
+      input.checked = selectedRoleIds.includes(role.id);
+      input.addEventListener("change", () => {
+        selectedRoleIds = Array.from(dispatchRoles.querySelectorAll<HTMLInputElement>("input:checked")).map((item) => item.value);
+        persistComposer();
+        syncRosterFromDispatch();
+        updateDispatchSummary();
+      });
+      label.append(input, document.createTextNode(role.name));
+      dispatchRoles.append(label);
+    }
+    updateDispatchSummary();
+  }
+
+  function syncRosterFromDispatch() {
+    if (applyingDispatchPreset && !latestAgentRoles.length) return;
+    agentLabRoles.querySelectorAll<HTMLInputElement>("input[type=checkbox]").forEach((input) => {
+      input.checked = selectedRoleIds.includes(input.value);
+    });
+  }
+
+  function updateDispatchSummary() {
+    const summary = dispatchSummary({ includePi, roleIds: selectedRoleIds }, latestAgentRoles);
+    dispatchSummaryLabel.textContent = summary;
+    sendButton.title = `Send to ${summary}`;
   }
 
   function switchBoard(board: string) {
@@ -355,7 +470,12 @@ markdown.renderer.rules.fence = (tokens, index) => {
       const input = document.createElement("input");
       input.type = "checkbox";
       input.value = role.id;
-      input.checked = hadRoster ? selected.has(role.id) : ["architect", "explorer", "reviewer"].includes(role.id);
+      input.checked = selectedRoleIds.length ? selectedRoleIds.includes(role.id) : hadRoster ? selected.has(role.id) : ["architect", "explorer", "reviewer"].includes(role.id);
+      input.addEventListener("change", () => {
+        selectedRoleIds = Array.from(agentLabRoles.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")).map((item) => item.value);
+        persistComposer();
+        renderDispatchRoles();
+      });
       const body = document.createElement("span");
       body.innerHTML = `<strong>${escapeHtml(role.name)}</strong><small>${escapeHtml(role.description || "")}</small><small>${escapeHtml(role.model || "default model")} · ${(role.tools || []).length} tools · cap ${escapeHtml(String(role.maxToolCalls || "default"))}</small>`;
       const edit = document.createElement("button");
@@ -369,6 +489,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
       label.append(input, body, edit, reset);
       agentLabRoles.append(label);
     }
+    renderDispatchRoles();
     renderSwarmStrip(runs);
     agentLabRuns.textContent = "";
     if (selectedRunId && !runs.some((run) => run.id === selectedRunId)) selectedRunId = "";

@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.10.0`
+- Version: `0.11.0`
 - Extension ID: `spacemanspiff-713.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -405,6 +405,17 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Preserve selected-run inspection across telemetry rerenders.
 - [x] Keep worktree review/validation/patch/merge controls on the selected run.
 - [x] Add unit and DOM coverage for source extraction and inspector tabs.
+
+### Phase 5B.4 implementation — completed in v0.11.0
+
+- [x] Add composer dispatch modes: Ask, Plan, Research, Implement, Review.
+- [x] Let the composer target Pi, selected agents, or both.
+- [x] Keep slash commands on the Pi thread.
+- [x] Expand existing `@` mentions for agent tasks; Review attaches `@git-diff` by default.
+- [x] Reuse existing Agent Lab run/review paths without new orchestration.
+- [x] Keep combined Pi + agent sends on Chat; agent-only sends open Swarm.
+- [x] Persist mode/target selections with the composer draft.
+- [x] Add protocol, helper, and DOM coverage for dispatch.
 
 ## Phase 5 — advanced studio backlog
 

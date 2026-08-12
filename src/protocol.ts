@@ -94,6 +94,7 @@ export interface RuntimeHealth {
 export type WebviewToHostMessage =
   | { type: "ready" }
   | { type: "prompt"; text: string }
+  | { type: "dispatch"; text: string; includePi: boolean; roleIds: string[]; mode: string }
   | { type: "abort" }
   | { type: "newSession" }
   | { type: "openSession" }
@@ -178,6 +179,14 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
   if (["prompt", "copyText", "insertText"].includes(value.type)) {
     const text = boundedString(value.text, 2 * 1024 * 1024);
     return text === undefined ? undefined : { type: value.type, text } as WebviewToHostMessage;
+  }
+  if (value.type === "dispatch") {
+    const text = boundedString(value.text, 2 * 1024 * 1024);
+    const mode = boundedString(value.mode, 32);
+    const roleIds = Array.isArray(value.roleIds) ? value.roleIds.filter((item): item is string => typeof item === "string" && item.length <= 512).slice(0, 16) : undefined;
+    return text === undefined || mode === undefined || roleIds === undefined || typeof value.includePi !== "boolean"
+      ? undefined
+      : { type: value.type, text, includePi: value.includePi, roleIds, mode };
   }
   if (value.type === "openLink") {
     const href = boundedString(value.href, 8 * 1024);

@@ -1,6 +1,6 @@
 # Phase 5B — Chat Window UI/UX Improvements Discovery
 
-Status: discovery complete; implementation slices 5B.1 and 5B.2 shipped in v0.9.0; 5B.3 shipped in v0.10.0. Later slices remain design only.
+Status: discovery complete; implementation slices 5B.1 and 5B.2 shipped in v0.9.0; 5B.3 shipped in v0.10.0; 5B.4 shipped in v0.11.0. Later slices remain design only.
 
 ## Goal
 
@@ -422,10 +422,13 @@ src/controllers/
 - Added source/citation cards from tool fetch metadata plus cited URLs, with official/secondary/community and failed-fetch tags.
 - Kept worktree review/validation/patch/merge controls on the selected run.
 
-### 5B.4 — Dispatch console
+### 5B.4 — Dispatch console — shipped in v0.11.0
 
-- Let composer target Pi, selected agents, or teams.
-- Add explicit “Research”, “Plan”, “Implement”, “Review” dispatch modes.
+- Composer now targets Pi, selected agents, or both.
+- Mode presets Ask / Plan / Research / Implement / Review select default roles without changing Agent Lab orchestration.
+- Slash commands stay on the Pi thread.
+- Review mode attaches `@git-diff` unless the user already attached review context.
+- Combined Pi + agent sends stay on Chat; agent-only sends open Swarm.
 
 ### 5B.5 — Teams/playbooks discovery slice
 
@@ -441,7 +444,7 @@ src/controllers/
 
 ## First implementation slice result
 
-**5B.1 + 5B.2 shipped in v0.9.0. 5B.3 shipped in v0.10.0.**
+**5B.1 + 5B.2 shipped in v0.9.0. 5B.3 shipped in v0.10.0. 5B.4 shipped in v0.11.0.**
 
 Why:
 

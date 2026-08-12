@@ -433,6 +433,67 @@ button { color: inherit; }
   background: var(--vscode-input-background);
   box-shadow: 0 3px 14px rgba(0,0,0,.12);
 }
+.dispatch-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 0;
+}
+.dispatch-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+.dispatch-field select {
+  border: 1px solid var(--vscode-input-border, var(--border));
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  font-size: 10px;
+}
+.dispatch-include {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+.dispatch-roles, .dispatch-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.dispatch-roles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+}
+.dispatch-roles label:has(input:checked) {
+  background: var(--vscode-list-inactiveSelectionBackground);
+  color: inherit;
+}
+.dispatch-shortcuts button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 10px;
+}
+.dispatch-shortcuts button:hover { background: var(--vscode-toolbar-hoverBackground); color: inherit; }
+.dispatch-empty, .dispatch-summary { color: var(--vscode-descriptionForeground); font-size: 10px; }
+.dispatch-summary { margin-right: 4px; }
 #prompt {
   display: block;
   width: 100%;
