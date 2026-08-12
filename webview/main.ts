@@ -8,17 +8,19 @@ import type {
   PiCommandInfo,
   AgentRole,
   AgentRunSnapshot,
+  AgentTeam,
   WebviewToHostMessage,
 } from "../src/protocol";
 import type { ChangeSet } from "../src/changeReview";
 import { extractAgentSources, previewText, sourceSummary, type AgentSource } from "../src/agentArtifacts";
 import { DISPATCH_PRESETS, dispatchPreset, dispatchSummary, fallbackDispatchRoles, parseDispatchMode, resolveDispatchRoles } from "../src/dispatch";
+import { applyTeam, playbookPreview } from "../src/agentTeams";
 import { renderRuntimeHealth } from "./runtimeHealth";
 
 interface VsCodeApi {
   postMessage(message: WebviewToHostMessage): void;
-  getState(): { draft?: string; dispatchMode?: string; includePi?: boolean; roleIds?: string[] } | undefined;
-  setState(state: { draft?: string; dispatchMode?: string; includePi?: boolean; roleIds?: string[] }): void;
+  getState(): { draft?: string; dispatchMode?: string; includePi?: boolean; roleIds?: string[]; teamId?: string } | undefined;
+  setState(state: { draft?: string; dispatchMode?: string; includePi?: boolean; roleIds?: string[]; teamId?: string }): void;
 }
 
 declare function acquireVsCodeApi(): VsCodeApi;
@@ -66,6 +68,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const stopButton = document.getElementById("stop") as HTMLButtonElement;
   const attachButton = document.getElementById("attach") as HTMLButtonElement;
   const dispatchMode = document.getElementById("dispatch-mode") as HTMLSelectElement;
+  const dispatchTeam = document.getElementById("dispatch-team") as HTMLSelectElement;
   const dispatchIncludePi = document.getElementById("dispatch-include-pi") as HTMLInputElement;
   const dispatchRoles = document.getElementById("dispatch-roles");
   const dispatchShortcuts = document.getElementById("dispatch-shortcuts");
@@ -117,6 +120,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   let latestChangeSet: ChangeSet | undefined;
   let latestMcpStatus: McpStatusSnapshot | undefined;
   let latestAgentRoles: AgentRole[] = [];
+  let latestAgentTeams: AgentTeam[] = [];
   let latestAgentRuns: AgentRunSnapshot[] = [];
   let selectedRunId = "";
   let selectedInspectorTab = "result";
@@ -130,6 +134,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   let selectedDispatchMode = parseDispatchMode(persisted.dispatchMode);
   let includePi = persisted.includePi !== false;
   let selectedRoleIds = Array.isArray(persisted.roleIds) ? persisted.roleIds : [];
+  let selectedTeamId = typeof persisted.teamId === "string" ? persisted.teamId : "";
   let applyingDispatchPreset = false;
 
   document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
@@ -167,6 +172,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   attachButton.addEventListener("click", () => insertAtCursor("@"));
   jump.querySelector("button").addEventListener("click", () => scrollToBottom(true));
   dispatchMode.addEventListener("change", () => applyDispatchPreset(parseDispatchMode(dispatchMode.value), true));
+  dispatchTeam.addEventListener("change", () => applySelectedTeam(dispatchTeam.value, true));
   dispatchIncludePi.addEventListener("change", () => {
     includePi = dispatchIncludePi.checked;
     persistComposer();
@@ -253,7 +259,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
       case "extensionUiRequest": renderExtensionRequest(data); break;
       case "sessionStats": renderSessionStats(data.stats); break;
       case "sessionTabs": renderSessionTabs(data.tabs || []); break;
-      case "agentLab": renderAgentLab(data.roles || [], data.runs || [], data.maxConcurrent || 4); break;
+      case "agentLab": renderAgentLab(data.roles || [], data.runs || [], data.maxConcurrent || 4, data.teams || []); break;
       case "showAgentLab": switchBoard("swarm"); break;
       case "clear":
         transcript.textContent = "";
@@ -356,7 +362,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   }
 
   function persistComposer() {
-    Object.assign(persisted, { draft: prompt.value, dispatchMode: selectedDispatchMode, includePi, roleIds: selectedRoleIds });
+    Object.assign(persisted, { draft: prompt.value, dispatchMode: selectedDispatchMode, includePi, roleIds: selectedRoleIds, teamId: selectedTeamId });
     vscode.setState(persisted);
   }
 
@@ -378,6 +384,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
       button.addEventListener("click", () => insertAtCursor(`${item.token} `));
       dispatchShortcuts.append(button);
     }
+    renderTeamPicker();
     applyDispatchPreset(selectedDispatchMode, false);
   }
 
@@ -385,6 +392,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
     const preset = dispatchPreset(mode);
     selectedDispatchMode = preset.mode;
     applyingDispatchPreset = true;
+    if (fromUser) selectedTeamId = "";
     if (fromUser || !selectedRoleIds.length) {
       includePi = preset.includePi;
       selectedRoleIds = fallbackDispatchRoles(preset.mode, latestAgentRoles);
@@ -420,6 +428,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
       input.checked = selectedRoleIds.includes(role.id);
       input.addEventListener("change", () => {
         selectedRoleIds = Array.from(dispatchRoles.querySelectorAll<HTMLInputElement>("input:checked")).map((item) => item.value);
+        selectedTeamId = "";
+        if (dispatchTeam) dispatchTeam.value = "";
         persistComposer();
         syncRosterFromDispatch();
         updateDispatchSummary();
@@ -438,9 +448,54 @@ markdown.renderer.rules.fence = (tokens, index) => {
   }
 
   function updateDispatchSummary() {
+    const team = latestAgentTeams.find((item) => item.id === selectedTeamId);
     const summary = dispatchSummary({ includePi, roleIds: selectedRoleIds }, latestAgentRoles);
-    dispatchSummaryLabel.textContent = summary;
+    dispatchSummaryLabel.textContent = team ? `${team.name} · ${summary}` : summary;
+    dispatchSummaryLabel.title = team?.playbook ? playbookPreview(team.playbook, 280) : "";
     sendButton.title = `Send to ${summary}`;
+  }
+
+  function renderTeamPicker() {
+    if (!dispatchTeam) return;
+    dispatchTeam.textContent = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "None";
+    dispatchTeam.append(none);
+    for (const team of latestAgentTeams) {
+      const option = document.createElement("option");
+      option.value = team.id;
+      option.textContent = team.name;
+      option.title = team.description || playbookPreview(team.playbook);
+      dispatchTeam.append(option);
+    }
+    dispatchTeam.value = latestAgentTeams.some((team) => team.id === selectedTeamId) ? selectedTeamId : "";
+    if (dispatchTeam.value !== selectedTeamId) selectedTeamId = dispatchTeam.value;
+  }
+
+  function applySelectedTeam(teamId: string, fromUser: boolean) {
+    selectedTeamId = teamId;
+    const applied = applyTeam(latestAgentTeams.find((team) => team.id === teamId), latestAgentRoles.map((role) => role.id));
+    if (!applied) {
+      persistComposer();
+      updateDispatchSummary();
+      return;
+    }
+    applyingDispatchPreset = true;
+    selectedDispatchMode = applied.mode;
+    includePi = applied.includePi;
+    selectedRoleIds = applied.roleIds.length ? applied.roleIds : fallbackDispatchRoles(applied.mode, latestAgentRoles);
+    dispatchMode.value = applied.mode;
+    dispatchIncludePi.checked = includePi;
+    const preset = dispatchPreset(applied.mode);
+    prompt.placeholder = preset.placeholder;
+    prompt.setAttribute("aria-label", includePi || !selectedRoleIds.length ? "Message Pi" : `Dispatch ${preset.label.toLowerCase()} task`);
+    renderDispatchRoles();
+    syncRosterFromDispatch();
+    persistComposer();
+    applyingDispatchPreset = false;
+    updateDispatchSummary();
+    if (fromUser && applied.playbook) dispatchSummaryLabel.title = playbookPreview(applied.playbook, 280);
   }
 
   function switchBoard(board: string) {
@@ -455,11 +510,14 @@ markdown.renderer.rules.fence = (tokens, index) => {
     if (swarm && !latestAgentRoles.length) vscode.postMessage({ type: "openAgentLab" });
   }
 
-  function renderAgentLab(roles: AgentRole[], runs: AgentRunSnapshot[], maxConcurrent: number) {
+  function renderAgentLab(roles: AgentRole[], runs: AgentRunSnapshot[], maxConcurrent: number, teams: AgentTeam[] = []) {
     const selected = new Set(Array.from(agentLabRoles.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")).map((input) => input.value));
     const hadRoster = latestAgentRoles.length > 0;
     latestAgentRoles = roles;
+    latestAgentTeams = teams;
     latestAgentRuns = runs;
+    renderTeamPicker();
+    if (selectedTeamId) applySelectedTeam(selectedTeamId, false);
     const active = runs.filter((run) => ["queued", "starting", "running"].includes(run.status));
     const attention = runs.filter((run) => run.status === "failed" || (run.worktree && run.worktree.lifecycle === "complete"));
     agentLabSummary.textContent = `${roles.length} roles · ${active.length}/${maxConcurrent} active or queued · ${attention.length} need attention`;
@@ -473,6 +531,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
       input.checked = selectedRoleIds.length ? selectedRoleIds.includes(role.id) : hadRoster ? selected.has(role.id) : ["architect", "explorer", "reviewer"].includes(role.id);
       input.addEventListener("change", () => {
         selectedRoleIds = Array.from(agentLabRoles.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")).map((item) => item.value);
+        selectedTeamId = "";
+        if (dispatchTeam) dispatchTeam.value = "";
         persistComposer();
         renderDispatchRoles();
       });

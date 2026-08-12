@@ -1,6 +1,6 @@
 # Phase 5B — Chat Window UI/UX Improvements Discovery
 
-Status: discovery complete; implementation slices 5B.1 and 5B.2 shipped in v0.9.0; 5B.3 shipped in v0.10.0; 5B.4 shipped in v0.11.0. Later slices remain design only.
+Status: discovery complete; implementation slices 5B.1 and 5B.2 shipped in v0.9.0; 5B.3 shipped in v0.10.0; 5B.4 shipped in v0.11.0; 5B.5 shipped in v0.12.0. Later slices remain design only.
 
 ## Goal
 
@@ -430,10 +430,13 @@ src/controllers/
 - Review mode attaches `@git-diff` unless the user already attached review context.
 - Combined Pi + agent sends stay on Chat; agent-only sends open Swarm.
 
-### 5B.5 — Teams/playbooks discovery slice
+### 5B.5 — Teams/playbooks discovery slice — shipped in v0.12.0
 
-- Design saved teams/playbooks data format.
-- Add UI mock plus non-executing saved team picker.
+- Saved teams are Markdown files under `~/.pi/agent/teams/*.md` or `<project>/.pi/teams/*.md`.
+- Frontmatter selects mode, Pi inclusion, and role IDs; the body is a non-executing playbook note.
+- Composer Team picker applies those targets to the existing dispatch console.
+- Built-in presets: Research + Docs, Plan + Explore + Review, Implement + Test + Review, Security Review.
+- No sequential playbook runner and no new orchestration.
 
 ### 5B.6 — Accessibility/theme pass
 
@@ -444,7 +447,7 @@ src/controllers/
 
 ## First implementation slice result
 
-**5B.1 + 5B.2 shipped in v0.9.0. 5B.3 shipped in v0.10.0. 5B.4 shipped in v0.11.0.**
+**5B.1 + 5B.2 shipped in v0.9.0. 5B.3 shipped in v0.10.0. 5B.4 shipped in v0.11.0. 5B.5 shipped in v0.12.0.**
 
 Why:
 

@@ -1016,6 +1016,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   <footer class="composer-shell">
     <div id="dispatch-bar" class="dispatch-bar" aria-label="Dispatch console">
       <label class="dispatch-field"><span>Mode</span><select id="dispatch-mode" aria-label="Dispatch mode"></select></label>
+      <label class="dispatch-field"><span>Team</span><select id="dispatch-team" aria-label="Saved team"><option value="">None</option></select></label>
       <label class="dispatch-include"><input id="dispatch-include-pi" type="checkbox" checked> Pi thread</label>
       <div id="dispatch-roles" class="dispatch-roles" aria-label="Dispatch agent targets"></div>
       <div id="dispatch-shortcuts" class="dispatch-shortcuts" aria-label="Context shortcuts"></div>

@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.11.0`
+- Version: `0.12.0`
 - Extension ID: `spacemanspiff-713.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -416,6 +416,16 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Keep combined Pi + agent sends on Chat; agent-only sends open Swarm.
 - [x] Persist mode/target selections with the composer draft.
 - [x] Add protocol, helper, and DOM coverage for dispatch.
+
+### Phase 5B.5 implementation — completed in v0.12.0
+
+- [x] Design saved teams as Markdown files with mode, includePi, roles, and a playbook note body.
+- [x] Discover user/project teams from `~/.pi/agent/teams` and `<project>/.pi/teams`.
+- [x] Add built-in team presets without executing playbook steps.
+- [x] Add a composer Team picker that applies targets to the existing dispatch console.
+- [x] Persist the selected team with the composer draft.
+- [x] Keep playbooks as notes only; do not add a sequential runner.
+- [x] Add parser and DOM coverage for team application.
 
 ## Phase 5 — advanced studio backlog
 

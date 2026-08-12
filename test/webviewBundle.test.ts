@@ -14,7 +14,7 @@ const shell = `<!doctype html><html><body>
   <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
   <section id="agent-lab-panel"><button data-close-panel="agent-lab-panel"></button><div id="agent-lab-summary"></div><textarea id="agent-lab-task"></textarea><div id="agent-lab-roles"></div><button id="agent-lab-run"></button><button id="agent-lab-stop"></button><button id="agent-lab-refresh"></button><div id="agent-lab-runs"></div><aside id="artifact-inspector" class="hidden"><strong id="inspector-title"></strong><span id="inspector-meta"></span><button id="inspector-close"></button><nav id="inspector-tabs"></nav><div id="inspector-body"></div></aside></section>
   <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>
-  <div id="dispatch-bar"><select id="dispatch-mode"></select><input id="dispatch-include-pi" type="checkbox" checked><div id="dispatch-roles"></div><div id="dispatch-shortcuts"></div></div>
+  <div id="dispatch-bar"><select id="dispatch-mode"></select><select id="dispatch-team"><option value="">None</option></select><input id="dispatch-include-pi" type="checkbox" checked><div id="dispatch-roles"></div><div id="dispatch-shortcuts"></div></div>
   <div id="context-chips"></div><textarea id="prompt"></textarea>
   <button id="sessions"></button><button id="resources"></button><button id="agent-lab"></button><button id="compact"></button><button id="reload-session"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
   <span id="dispatch-summary"></span>
@@ -118,9 +118,9 @@ describe("bundled Pi webview", () => {
     expect(document.querySelector("#session-tabs")?.textContent).toContain("B");
 
     window.dispatchEvent(new window.MessageEvent("message", {
-      data: { type: "agentLab", maxConcurrent: 4, roles: [{ id: "architect", name: "Architect", source: "builtin", description: "Plans", model: "openrouter/deepseek/deepseek-v4-pro", tools: ["read"], maxToolCalls: 8 }], runs: [{ id: "run-1", roleName: "Architect", roleId: "architect", task: "Plan a safe change", status: "running", progress: "Reading architecture", result: "See [Docs](https://code.visualstudio.com/api/extension-guides/webview)", model: "openrouter/deepseek/deepseek-v4-pro", toolCallCount: 2, maxToolCalls: 8, lastTool: "web_fetch", toolCounts: { web_fetch: 1, read: 1 }, toolEvents: [{ tool: "web_fetch", status: "done", args: { url: "https://code.visualstudio.com/api/extension-guides/webview" } }], sources: [{ url: "https://code.visualstudio.com/api/extension-guides/webview", title: "Webview guide", status: "ok", kind: "official" }] }] },
+      data: { type: "agentLab", maxConcurrent: 4, roles: [{ id: "architect", name: "Architect", source: "builtin", description: "Plans", model: "openrouter/deepseek/deepseek-v4-pro", tools: ["read"], maxToolCalls: 8 }, { id: "explorer", name: "Explorer", source: "builtin", tools: ["read"] }, { id: "reviewer", name: "Reviewer", source: "builtin", tools: ["read"] }], teams: [{ id: "plan-review", name: "Plan + Explore + Review", description: "Map then review", includePi: false, mode: "plan", roleIds: ["architect", "explorer", "reviewer"], playbook: "Plan, then review.", source: "builtin" }], runs: [{ id: "run-1", roleName: "Architect", roleId: "architect", task: "Plan a safe change", status: "running", progress: "Reading architecture", result: "See [Docs](https://code.visualstudio.com/api/extension-guides/webview)", model: "openrouter/deepseek/deepseek-v4-pro", toolCallCount: 2, maxToolCalls: 8, lastTool: "web_fetch", toolCounts: { web_fetch: 1, read: 1 }, toolEvents: [{ tool: "web_fetch", status: "done", args: { url: "https://code.visualstudio.com/api/extension-guides/webview" } }], sources: [{ url: "https://code.visualstudio.com/api/extension-guides/webview", title: "Webview guide", status: "ok", kind: "official" }] }] },
     }));
-    expect(document.querySelector("#agent-lab-summary")?.textContent).toContain("1 roles");
+    expect(document.querySelector("#agent-lab-summary")?.textContent).toContain("3 roles");
     expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("See [Docs]");
     expect(document.querySelector("#agent-lab-roles")?.textContent).toContain("openrouter/deepseek");
     expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("2/8");
@@ -136,6 +136,11 @@ describe("bundled Pi webview", () => {
     expect(document.querySelector("#inspector-body")?.textContent).toContain("code.visualstudio.com");
     expect(document.querySelector("#dispatch-mode")?.querySelectorAll("option").length).toBeGreaterThan(1);
     expect(document.querySelector("#dispatch-roles")?.textContent).toContain("Architect");
+    expect(document.querySelector("#dispatch-team")?.textContent).toContain("Plan + Explore + Review");
+    (document.querySelector("#dispatch-team") as HTMLSelectElement).value = "plan-review";
+    document.querySelector("#dispatch-team")?.dispatchEvent(new window.Event("change", { bubbles: true }));
+    expect((document.querySelector("#dispatch-include-pi") as HTMLInputElement).checked).toBe(false);
+    expect(document.querySelector("#dispatch-summary")?.textContent).toContain("Plan + Explore + Review");
     (document.querySelector("#dispatch-mode") as HTMLSelectElement).value = "plan";
     document.querySelector("#dispatch-mode")?.dispatchEvent(new window.Event("change", { bubbles: true }));
     (document.querySelector("#prompt") as HTMLTextAreaElement).value = "Plan a safe change";
