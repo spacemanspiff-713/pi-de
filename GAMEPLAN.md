@@ -249,20 +249,20 @@ Goal: make the current implementation modular enough to support multiple runtime
 
 ### Read-only VS Code bridge
 
-- [ ] Add a lean `vscode_context` Pi tool.
-- [ ] Support diagnostics.
-- [ ] Support active selection/editor state.
-- [ ] Support open-editor metadata.
-- [ ] Support document/workspace symbols.
-- [ ] Support definitions.
-- [ ] Support references.
-- [ ] Support hover information.
-- [ ] Add `/vscode-selection`.
-- [ ] Add `/vscode-diagnostics`.
-- [ ] Add `/vscode-symbols`.
-- [ ] Add `/vscode-references`.
-- [ ] Keep all bridge results bounded.
-- [ ] Keep editor mutation disabled in the first bridge release.
+- [x] Add a lean `vscode_context` Pi tool.
+- [x] Support diagnostics.
+- [x] Support active selection/editor state.
+- [x] Support open-editor metadata.
+- [x] Support document/workspace symbols.
+- [x] Support definitions.
+- [x] Support references.
+- [x] Support hover information.
+- [x] Add `/vscode-selection`.
+- [x] Add `/vscode-diagnostics`.
+- [x] Add `/vscode-symbols`.
+- [x] Add `/vscode-references`.
+- [x] Keep all bridge results bounded.
+- [x] Keep editor mutation disabled in the first bridge release.
 
 ### Extension UI
 

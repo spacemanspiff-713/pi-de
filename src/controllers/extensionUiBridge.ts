@@ -1,12 +1,16 @@
 import * as vscode from "vscode";
 import type { PiRpcClient, RpcRecord } from "../piRpcClient";
 import type { McpController } from "./mcpController";
+import type { VscodeContextController } from "./vscodeContextController";
+
+const CONTEXT_REQUEST_TITLE = "__PIDE_VSCODE_CONTEXT__";
 
 export class ExtensionUiBridge {
   constructor(
     private readonly client: () => PiRpcClient | undefined,
     private readonly post: (message: Record<string, unknown>) => void,
     private readonly mcp: McpController,
+    private readonly vscodeContext: VscodeContextController,
   ) {}
 
   async handle(request: RpcRecord): Promise<void> {
@@ -31,6 +35,11 @@ export class ExtensionUiBridge {
       client.send(value === undefined
         ? { type: "extension_ui_response", id, cancelled: true }
         : { type: "extension_ui_response", id, value });
+      return;
+    }
+    if (method === "input" && request.title === CONTEXT_REQUEST_TITLE) {
+      const value = await this.vscodeContext.request(stringValue(request.placeholder));
+      client.send({ type: "extension_ui_response", id, value });
       return;
     }
     if (method === "input" || method === "editor") {

@@ -6,6 +6,7 @@ import { ExtensionUiBridge } from "./controllers/extensionUiBridge";
 import { McpController } from "./controllers/mcpController";
 import { SessionController } from "./controllers/sessionController";
 import { ResourceController } from "./controllers/resourceController";
+import { VscodeContextController } from "./controllers/vscodeContextController";
 import { contextScore, extractMentions, mentionText, truncateContext } from "./contextMentions";
 import type { RpcRecord } from "./piRpcClient";
 import {
@@ -70,7 +71,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       post,
       () => this.refreshCommands(),
     );
-    this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp);
+    this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp, new VscodeContextController());
     this.resources = new ResourceController(folder, () => this.runtime.health, () => this.restart(), output);
     this.unsubscribeRuntime = this.runtime.onEvent((event) => void this.handleRuntimeEvent(event));
   }
