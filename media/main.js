@@ -21284,7 +21284,7 @@
     function renderAgentLab(roles, runs, maxConcurrent) {
       latestAgentRoles = roles;
       latestAgentRuns = runs;
-      agentLabSummary.textContent = `${roles.length} roles \xB7 ${runs.filter((run) => ["queued", "starting", "running"].includes(run.status)).length}/${maxConcurrent} active or queued \xB7 read-only MVP`;
+      agentLabSummary.textContent = `${roles.length} roles \xB7 ${runs.filter((run) => ["queued", "starting", "running"].includes(run.status)).length}/${maxConcurrent} active or queued \xB7 read-only research + worktree coding`;
       agentLabRoles.textContent = "";
       for (const role of roles) {
         const label = document.createElement("label");
@@ -21308,9 +21308,24 @@
         ${run.error ? `<div class="agent-error">${escapeHtml2(run.error)}</div>` : ""}
         ${run.toolEvents?.length ? `<div class="agent-tools">${run.toolEvents.slice(-8).map((tool) => escapeHtml2(tool.tool)).join(" \xB7 ")}</div>` : ""}
         ${resultHtml ? `<details ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
+        ${run.worktree ? `<details class="agent-worktree" open><summary>Worktree review \xB7 ${escapeHtml2(run.worktree.lifecycle)} \xB7 ${escapeHtml2(run.worktree.branch)}</summary>
+          <div class="agent-tools">${escapeHtml2(run.worktree.path)}</div>
+          ${run.validation ? `<div class="agent-validation ${run.validation.ok ? "ok" : "fail"}">Validation: ${run.validation.ok ? "passed" : "failed"} \u2014 ${escapeHtml2(run.validation.output.slice(-500))}</div>` : ""}
+          <div class="agent-files">${(run.changes || []).map((file) => `<label><input type="checkbox" data-agent-file="${escapeHtml2(file.path)}" checked> <code>${escapeHtml2(file.status)} ${escapeHtml2(file.path)}</code> <button data-agent-diff="${escapeHtml2(file.path)}">Diff</button></label>`).join("") || "No changes captured."}</div>
+          <div class="agent-actions"><button data-agent-review>Refresh changes</button><button data-agent-validate>Validate</button><button data-agent-apply>Apply selected patch</button><button data-agent-merge>Merge branch\u2026</button><button data-agent-cleanup>Clean up</button></div>
+        </details>` : ""}
         <div class="agent-actions"><button data-agent-stop="${escapeHtml2(run.id)}">Stop</button><button data-agent-retry="${escapeHtml2(run.id)}">Retry</button></div>`;
         item.querySelector("[data-agent-stop]")?.addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab", runId: run.id }));
         item.querySelector("[data-agent-retry]")?.addEventListener("click", () => vscode.postMessage({ type: "retryAgentLab", runId: run.id }));
+        item.querySelector("[data-agent-review]")?.addEventListener("click", () => vscode.postMessage({ type: "reviewAgentWorktree", runId: run.id }));
+        item.querySelector("[data-agent-validate]")?.addEventListener("click", () => vscode.postMessage({ type: "validateAgentWorktree", runId: run.id, command: "" }));
+        item.querySelector("[data-agent-apply]")?.addEventListener("click", () => {
+          const paths = Array.from(item.querySelectorAll("[data-agent-file]:checked")).map((input) => input.dataset.agentFile || "");
+          vscode.postMessage({ type: "applyAgentPatch", runId: run.id, paths });
+        });
+        item.querySelector("[data-agent-merge]")?.addEventListener("click", () => vscode.postMessage({ type: "mergeAgentWorktree", runId: run.id }));
+        item.querySelector("[data-agent-cleanup]")?.addEventListener("click", () => vscode.postMessage({ type: "cleanupAgentWorktree", runId: run.id }));
+        item.querySelectorAll("[data-agent-diff]").forEach((button) => button.addEventListener("click", () => vscode.postMessage({ type: "openAgentDiff", runId: run.id, path: button.dataset.agentDiff || "" })));
         agentLabRuns.append(item);
       }
     }

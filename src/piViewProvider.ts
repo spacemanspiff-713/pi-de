@@ -87,6 +87,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     this.extensionUi = new ExtensionUiBridge(() => this.runtime.client, post, this.mcp, new VscodeContextController(), () => Boolean(this.view));
     this.resources = new ResourceController(folder, () => this.runtime.health, () => this.restart(), output);
     this.unsubscribeRuntime = this.runtimeManager.onEvent((event) => void this.handleRuntimeEvent(event));
+    void this.agentLab.restore();
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -139,6 +140,10 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    if (uri.scheme === "pide-agent-change") {
+      const params = new URLSearchParams(uri.query);
+      return await this.agentLab.provideWorktreeContent(params.get("runId") ?? "", params.get("path") ?? uri.path.replace(/^\//, ""), params.get("side") === "before" ? "before" : "after");
+    }
     return await this.changeReview.provideTextDocumentContent(uri);
   }
 
@@ -401,6 +406,24 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         break;
       case "retryAgentLab":
         if (message.runId) await this.agentLab.retry(message.runId);
+        break;
+      case "reviewAgentWorktree":
+        if (message.runId) await this.agentLab.review(message.runId);
+        break;
+      case "validateAgentWorktree":
+        await this.agentLab.validate(message.runId, message.command);
+        break;
+      case "openAgentDiff":
+        await this.agentLab.openDiff(message.runId, message.path);
+        break;
+      case "applyAgentPatch":
+        await this.agentLab.applyAccepted(message.runId, message.paths);
+        break;
+      case "mergeAgentWorktree":
+        if (message.runId) await this.agentLab.merge(message.runId);
+        break;
+      case "cleanupAgentWorktree":
+        if (message.runId) await this.agentLab.cleanupWorktree(message.runId);
         break;
       case "activateTab":
         await this.activateTab(message.id);

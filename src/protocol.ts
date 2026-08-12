@@ -122,6 +122,12 @@ export type WebviewToHostMessage =
   | { type: "runAgentLab"; roleIds: string[]; task: string }
   | { type: "stopAgentLab"; runId?: string }
   | { type: "retryAgentLab"; runId: string }
+  | { type: "reviewAgentWorktree"; runId: string }
+  | { type: "validateAgentWorktree"; runId: string; command: string }
+  | { type: "openAgentDiff"; runId: string; path: string }
+  | { type: "applyAgentPatch"; runId: string; paths: string[] }
+  | { type: "mergeAgentWorktree"; runId: string }
+  | { type: "cleanupAgentWorktree"; runId: string }
   | { type: "activateTab"; id: string }
   | { type: "closeTab"; id: string }
   | { type: "extensionUiResponse"; id: string; value?: string; confirmed?: boolean; cancelled?: boolean };
@@ -190,9 +196,24 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
     const roleIds = Array.isArray(value.roleIds) ? value.roleIds.filter((item): item is string => typeof item === "string" && item.length <= 512).slice(0, 16) : undefined;
     return task === undefined || roleIds === undefined ? undefined : { type: value.type, roleIds, task };
   }
-  if (["stopAgentLab", "retryAgentLab"].includes(value.type)) {
+  if (["stopAgentLab", "retryAgentLab", "reviewAgentWorktree", "mergeAgentWorktree", "cleanupAgentWorktree"].includes(value.type)) {
     const runId = optionalBoundedString(value.runId, 512);
     return runId === undefined ? undefined : { type: value.type, runId: runId || undefined } as WebviewToHostMessage;
+  }
+  if (value.type === "validateAgentWorktree") {
+    const runId = boundedString(value.runId, 512);
+    const command = boundedString(value.command, 8 * 1024);
+    return runId === undefined || command === undefined ? undefined : { type: value.type, runId, command };
+  }
+  if (value.type === "openAgentDiff") {
+    const runId = boundedString(value.runId, 512);
+    const path = boundedString(value.path, 32 * 1024);
+    return runId === undefined || path === undefined ? undefined : { type: value.type, runId, path };
+  }
+  if (value.type === "applyAgentPatch") {
+    const runId = boundedString(value.runId, 512);
+    const paths = Array.isArray(value.paths) ? value.paths.filter((item): item is string => typeof item === "string" && item.length <= 32 * 1024).slice(0, 2_000) : undefined;
+    return runId === undefined || paths === undefined ? undefined : { type: value.type, runId, paths };
   }
   if (["activateTab", "closeTab"].includes(value.type)) {
     const id = boundedString(value.id, 4096);

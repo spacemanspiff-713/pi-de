@@ -12,6 +12,7 @@ export function activate(context: vscode.ExtensionContext): void {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.workspace.registerTextDocumentContentProvider("pide-change", provider),
+    vscode.workspace.registerTextDocumentContentProvider("pide-agent-change", provider),
     vscode.commands.registerCommand("pide.openChat", () => provider.reveal()),
     vscode.commands.registerCommand("pide.newSession", () => provider.newSession()),
     vscode.commands.registerCommand("pide.openSession", () => provider.openSession()),
