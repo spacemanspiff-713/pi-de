@@ -8,7 +8,7 @@ PiDE gives Pi a first-class home in the editor: streaming conversations, native 
 
 > **Vibe coded with Pi, for Pi.** Every commit in this repo was produced by a Pi coding agent working inside its own PiDE interface. The primary model was `openai-codex/gpt-5.5` with thinking on medium, assisted by `openrouter/deepseek/deepseek-v4-pro` & local `gemma-4-26b-a4b` for faster iteration. Also used `openai-codex/gpt-5.6 Terra ` for architecture review and planning. Pi literally built its own home.
 
-> **Project status:** Early open-source release. v0.9.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+> **Project status:** Early open-source release. v0.10.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## 🙏 Shoutout
 
@@ -122,7 +122,7 @@ Pi extension requests are bridged into VS Code for:
 
 ### Agent Lab
 
-PiDE v0.9 presents Agent Lab as a Chat / Swarm management board with an auto-hiding live swarm strip and normalized run cards. Run cards show task, status, elapsed time, model, tool use/cap, last tool, source count, progress, failures, results, and existing worktree review actions. Role selections survive telemetry updates, and background agents no longer force the Swarm view open. PiDE also includes Agent Lab control and observability. Built-in roles can be opened as editable Markdown overrides, including model, tools, skills, invocation, mode, tool-call cap, and duration cap. Read-only research roles run in isolated temporary Pi sidecars with exact tool allowlists and live telemetry. The `Implementer` is the sole coding role: it receives a dedicated Git branch/worktree, can use only `read`, `edit`, and `write` against paths inside that worktree, and returns a retained change set for review. PiDE can run configured validation in the worktree, open native VS Code diffs, apply only selected file patches, or—after a modal confirmation and merge-conflict preflight—merge the agent branch. The primary workspace is never given to a coding agent.
+PiDE v0.10 presents Agent Lab as a Chat / Swarm management board with an auto-hiding live swarm strip, compact run cards, and a selected-run artifact inspector. Cards stay scannable; the inspector holds the full result, source/citation cards, tool traces, worktree review, and audit trail. Role selections survive telemetry updates, and background agents no longer force the Swarm view open. PiDE also includes Agent Lab control and observability. Built-in roles can be opened as editable Markdown overrides, including model, tools, skills, invocation, mode, tool-call cap, and duration cap. Read-only research roles run in isolated temporary Pi sidecars with exact tool allowlists and live telemetry. The `Implementer` is the sole coding role: it receives a dedicated Git branch/worktree, can use only `read`, `edit`, and `write` against paths inside that worktree, and returns a retained change set for review. PiDE can run configured validation in the worktree, open native VS Code diffs, apply only selected file patches, or—after a modal confirmation and merge-conflict preflight—merge the agent branch. The primary workspace is never given to a coding agent.
 
 Example role override:
 
@@ -181,7 +181,7 @@ git clone https://github.com/spacemanspiff-713/pi-de.git
 cd pi-de
 npm install
 npm run package
-code --install-extension pide-0.9.0.vsix --force
+code --install-extension pide-0.10.0.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.

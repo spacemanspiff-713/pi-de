@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["webview/**/*.ts", "src/protocol.ts", "src/changeReview.ts"]
+  "include": ["webview/**/*.ts", "src/protocol.ts", "src/changeReview.ts", "src/agentArtifacts.ts"]
 }

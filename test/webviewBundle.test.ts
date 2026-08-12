@@ -12,7 +12,7 @@ const shell = `<!doctype html><html><body>
   <div id="widget"></div><section id="extension-request"></section><div id="change-summary"></div><section id="chat-board"><main id="transcript"></main></section>
   <div id="jump" class="hidden"><button>Jump</button></div>
   <section id="changes-panel"><button data-close-panel="changes-panel"></button><div id="changes-totals"></div><div id="changes-list"></div></section>
-  <section id="agent-lab-panel"><button data-close-panel="agent-lab-panel"></button><div id="agent-lab-summary"></div><textarea id="agent-lab-task"></textarea><div id="agent-lab-roles"></div><button id="agent-lab-run"></button><button id="agent-lab-stop"></button><button id="agent-lab-refresh"></button><div id="agent-lab-runs"></div></section>
+  <section id="agent-lab-panel"><button data-close-panel="agent-lab-panel"></button><div id="agent-lab-summary"></div><textarea id="agent-lab-task"></textarea><div id="agent-lab-roles"></div><button id="agent-lab-run"></button><button id="agent-lab-stop"></button><button id="agent-lab-refresh"></button><div id="agent-lab-runs"></div><aside id="artifact-inspector" class="hidden"><strong id="inspector-title"></strong><span id="inspector-meta"></span><button id="inspector-close"></button><nav id="inspector-tabs"></nav><div id="inspector-body"></div></aside></section>
   <section id="mcp-panel"><button data-close-panel="mcp-panel"></button><div id="mcp-totals"></div><div id="mcp-list"></div><div id="mcp-prompts"></div></section>
   <div id="context-chips"></div><textarea id="prompt"></textarea>
   <button id="sessions"></button><button id="resources"></button><button id="agent-lab"></button><button id="compact"></button><button id="reload-session"></button><button id="changes"></button><button id="mcp"></button><button id="new"></button><button id="restart"></button><button id="output"></button>
@@ -116,16 +116,22 @@ describe("bundled Pi webview", () => {
     expect(document.querySelector("#session-tabs")?.textContent).toContain("B");
 
     window.dispatchEvent(new window.MessageEvent("message", {
-      data: { type: "agentLab", maxConcurrent: 4, roles: [{ id: "architect", name: "Architect", source: "builtin", description: "Plans", model: "openrouter/deepseek/deepseek-v4-pro", tools: ["read"], maxToolCalls: 8 }], runs: [{ id: "run-1", roleName: "Architect", roleId: "architect", task: "Plan a safe change", status: "running", progress: "Reading architecture", result: "Done", model: "openrouter/deepseek/deepseek-v4-pro", toolCallCount: 2, maxToolCalls: 8, lastTool: "read", toolCounts: { read: 2 }, toolEvents: [{ tool: "read", status: "tool_execution_start" }] }] },
+      data: { type: "agentLab", maxConcurrent: 4, roles: [{ id: "architect", name: "Architect", source: "builtin", description: "Plans", model: "openrouter/deepseek/deepseek-v4-pro", tools: ["read"], maxToolCalls: 8 }], runs: [{ id: "run-1", roleName: "Architect", roleId: "architect", task: "Plan a safe change", status: "running", progress: "Reading architecture", result: "See [Docs](https://code.visualstudio.com/api/extension-guides/webview)", model: "openrouter/deepseek/deepseek-v4-pro", toolCallCount: 2, maxToolCalls: 8, lastTool: "web_fetch", toolCounts: { web_fetch: 1, read: 1 }, toolEvents: [{ tool: "web_fetch", status: "done", args: { url: "https://code.visualstudio.com/api/extension-guides/webview" } }], sources: [{ url: "https://code.visualstudio.com/api/extension-guides/webview", title: "Webview guide", status: "ok", kind: "official" }] }] },
     }));
     expect(document.querySelector("#agent-lab-summary")?.textContent).toContain("1 roles");
-    expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("Done");
+    expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("See [Docs]");
     expect(document.querySelector("#agent-lab-roles")?.textContent).toContain("openrouter/deepseek");
     expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("2/8");
     expect(document.querySelector("#agent-lab-runs")?.textContent).toContain("Plan a safe change");
     expect(document.querySelector("#swarm-strip")?.textContent).toContain("Architect");
     (document.querySelector("[data-board=swarm]") as HTMLButtonElement | null)?.click();
     expect(document.querySelector("#agent-lab-panel")?.classList.contains("hidden")).toBe(false);
+    (document.querySelector("[data-agent-inspect]") as HTMLButtonElement | null)?.click();
+    expect(document.querySelector("#artifact-inspector")?.classList.contains("hidden")).toBe(false);
+    expect(document.querySelector("#inspector-title")?.textContent).toBe("Architect");
+    expect(document.querySelector("#inspector-body")?.textContent).toContain("Docs");
+    (document.querySelector("#inspector-tabs button:nth-child(2)") as HTMLButtonElement | null)?.click();
+    expect(document.querySelector("#inspector-body")?.textContent).toContain("code.visualstudio.com");
 
     window.dispatchEvent(new window.MessageEvent("message", {
       data: { type: "sessionStats", stats: { cost: 0.1234, contextUsage: { tokens: 60_000, contextWindow: 200_000, percent: 30 } } },

@@ -11,6 +11,7 @@ import type {
   WebviewToHostMessage,
 } from "../src/protocol";
 import type { ChangeSet } from "../src/changeReview";
+import { extractAgentSources, previewText, sourceSummary, type AgentSource } from "../src/agentArtifacts";
 import { renderRuntimeHealth } from "./runtimeHealth";
 
 interface VsCodeApi {
@@ -80,6 +81,11 @@ markdown.renderer.rules.fence = (tokens, index) => {
   const agentLabTask = document.getElementById("agent-lab-task") as HTMLTextAreaElement;
   const agentLabRoles = document.getElementById("agent-lab-roles");
   const agentLabRuns = document.getElementById("agent-lab-runs");
+  const artifactInspector = document.getElementById("artifact-inspector");
+  const inspectorTitle = document.getElementById("inspector-title");
+  const inspectorMeta = document.getElementById("inspector-meta");
+  const inspectorTabs = document.getElementById("inspector-tabs");
+  const inspectorBody = document.getElementById("inspector-body");
   const mcpPanel = document.getElementById("mcp-panel");
   const mcpTotals = document.getElementById("mcp-totals");
   const mcpList = document.getElementById("mcp-list");
@@ -106,6 +112,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
   let latestMcpStatus: McpStatusSnapshot | undefined;
   let latestAgentRoles: AgentRole[] = [];
   let latestAgentRuns: AgentRunSnapshot[] = [];
+  let selectedRunId = "";
+  let selectedInspectorTab = "result";
   let latestMcpPrompts: PiCommandInfo[] = [];
   let renderFrame: number | undefined;
   const tools = new Map<string, ToolElements>();
@@ -133,6 +141,7 @@ markdown.renderer.rules.fence = (tokens, index) => {
   document.getElementById("agent-lab-run").addEventListener("click", () => runAgentLab());
   document.getElementById("agent-lab-stop").addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab" }));
   document.getElementById("agent-lab-refresh").addEventListener("click", () => vscode.postMessage({ type: "refreshAgentLab" }));
+  document.getElementById("inspector-close")?.addEventListener("click", () => selectAgentRun(""));
   document.getElementById("mcp-reconnect-all").addEventListener("click", () => vscode.postMessage({ type: "mcpAction", action: "reconnect" }));
   document.getElementById("mcp-config").addEventListener("click", () => vscode.postMessage({ type: "openMcpConfig" }));
   runtimeTrustButton.addEventListener("click", () => vscode.postMessage({ type: "manageTrust" }));
@@ -156,6 +165,12 @@ markdown.renderer.rules.fence = (tokens, index) => {
   });
   prompt.addEventListener("click", updateContextSearch);
   prompt.addEventListener("keyup", updateContextSearch);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && selectedRunId) {
+      selectAgentRun("");
+      event.stopPropagation();
+    }
+  });
   prompt.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -356,14 +371,17 @@ markdown.renderer.rules.fence = (tokens, index) => {
     }
     renderSwarmStrip(runs);
     agentLabRuns.textContent = "";
+    if (selectedRunId && !runs.some((run) => run.id === selectedRunId)) selectedRunId = "";
     if (!runs.length) {
       const empty = document.createElement("div");
       empty.className = "swarm-empty";
       empty.innerHTML = `<strong>No agent runs yet</strong><span>Select roles, describe one bounded task, and run the swarm.</span>`;
       agentLabRuns.append(empty);
+      renderArtifactInspector();
       return;
     }
     for (const run of runs) renderAgentRunCard(run);
+    renderArtifactInspector();
   }
 
   function renderSwarmStrip(runs: AgentRunSnapshot[]) {
@@ -377,7 +395,8 @@ markdown.renderer.rules.fence = (tokens, index) => {
       chip.innerHTML = `<strong>${escapeHtml(run.roleName)}</strong><span>${escapeHtml(state.label)} · ${escapeHtml(String(run.toolCallCount || 0))}/${escapeHtml(String(run.maxToolCalls || "—"))}</span>`;
       chip.addEventListener("click", () => {
         switchBoard("swarm");
-        document.querySelector(`[data-agent-run-id="${CSS.escape(run.id)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+        selectAgentRun(run.id);
+        document.querySelector(`[data-agent-run-id="${CSS.escape(run.id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       });
       swarmStrip.append(chip);
     }
@@ -386,35 +405,209 @@ markdown.renderer.rules.fence = (tokens, index) => {
   function renderAgentRunCard(run: AgentRunSnapshot) {
     const item = document.createElement("article");
     const state = displayRunStatus(run);
+    const sources = run.sources?.length ? run.sources : extractAgentSources(run);
     item.dataset.agentRunId = run.id;
     item.tabIndex = 0;
-    item.className = `agent-run ${state.className}`;
-    const resultHtml = run.result ? DOMPurify.sanitize(markdown.render(run.result)) : "";
-    const sourceCount = new Set((run.result || "").match(/https?:\/\/[^\s)\]}>]+/g) || []).size;
+    item.className = `agent-run ${state.className}${selectedRunId === run.id ? " selected" : ""}`;
+    item.setAttribute("aria-pressed", String(selectedRunId === run.id));
     const elapsed = run.durationMs ? `${Math.round(run.durationMs / 1000)}s` : run.startedAt ? `${Math.max(0, Math.round((Date.now() - run.startedAt) / 1000))}s` : "—";
+    const sourceLabel = sourceSummary(sources);
     item.innerHTML = `<header class="agent-run-header"><div><strong>${escapeHtml(run.roleName)}</strong><span class="agent-status ${state.className}">${escapeHtml(state.label)}</span></div><span>${escapeHtml(elapsed)}</span></header>
       <div class="agent-task">${escapeHtml(run.task || "Task details unavailable for this older run.")}</div>
-      <div class="agent-metrics"><span title="Model">${escapeHtml(shortModel(run.model))}</span><span title="Tool calls">${escapeHtml(String(run.toolCallCount || 0))}/${escapeHtml(String(run.maxToolCalls || "—"))} tools</span><span title="Last tool">${escapeHtml(run.lastTool || "no tool yet")}</span>${sourceCount ? `<span>${sourceCount} sources</span>` : ""}</div>
+      <div class="agent-metrics"><span title="Model">${escapeHtml(shortModel(run.model))}</span><span title="Tool calls">${escapeHtml(String(run.toolCallCount || 0))}/${escapeHtml(String(run.maxToolCalls || "—"))} tools</span><span title="Last tool">${escapeHtml(run.lastTool || "no tool yet")}</span>${sourceLabel ? `<span>${escapeHtml(sourceLabel)}</span>` : ""}${run.tokens ? `<span>${escapeHtml(String(run.tokens))} tokens</span>` : ""}${typeof run.cost === "number" ? `<span>$${escapeHtml(run.cost.toFixed(4))}</span>` : ""}</div>
       <div class="agent-progress">${escapeHtml(run.progress || "Waiting")}</div>
       ${run.error ? `<div class="agent-error">${escapeHtml(run.error)}</div>` : ""}
-      ${run.toolEvents?.length ? `<details class="agent-tool-breakdown"><summary>Tool trace</summary><div>${Object.entries(run.toolCounts || {}).map(([tool, count]) => `${escapeHtml(tool)}: ${escapeHtml(String(count))}`).join(" · ")}</div><div>${run.toolEvents.slice(-12).map((tool) => escapeHtml(tool.tool)).join(" → ")}</div></details>` : ""}
-      ${resultHtml ? `<details class="agent-result" ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
-      ${run.worktree ? `<details class="agent-worktree" open><summary>Worktree · ${escapeHtml(run.worktree.lifecycle)} · ${escapeHtml(run.worktree.branch)}</summary>
-        <div class="agent-tools">${escapeHtml(run.worktree.path)}</div>
-        ${run.validation ? `<div class="agent-validation ${run.validation.ok ? "ok" : "fail"}">Validation: ${run.validation.ok ? "passed" : "failed"} — ${escapeHtml(run.validation.output.slice(-500))}</div>` : ""}
-        <div class="agent-files">${(run.changes || []).map((file) => `<label><input type="checkbox" data-agent-file="${escapeHtml(file.path)}" checked> <code>${escapeHtml(file.status)} ${escapeHtml(file.path)}</code> <button data-agent-diff="${escapeHtml(file.path)}">Diff</button></label>`).join("") || "No changes captured."}</div>
-        <div class="agent-actions"><button data-agent-review>Refresh changes</button><button data-agent-validate>Validate</button><button data-agent-apply>Apply selected</button><button data-agent-merge>Merge…</button><button data-agent-cleanup>Clean up</button></div>
-      </details>` : ""}
-      <div class="agent-actions"><button data-agent-stop="${escapeHtml(run.id)}" ${["succeeded", "failed", "cancelled"].includes(run.status) ? "disabled" : ""}>Stop</button><button data-agent-retry="${escapeHtml(run.id)}">Retry</button></div>`;
-    item.querySelector("[data-agent-stop]")?.addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab", runId: run.id }));
-    item.querySelector("[data-agent-retry]")?.addEventListener("click", () => vscode.postMessage({ type: "retryAgentLab", runId: run.id }));
-    item.querySelector("[data-agent-review]")?.addEventListener("click", () => vscode.postMessage({ type: "reviewAgentWorktree", runId: run.id }));
-    item.querySelector("[data-agent-validate]")?.addEventListener("click", () => vscode.postMessage({ type: "validateAgentWorktree", runId: run.id, command: "" }));
-    item.querySelector("[data-agent-apply]")?.addEventListener("click", () => { const paths = Array.from(item.querySelectorAll<HTMLInputElement>("[data-agent-file]:checked")).map((input) => input.dataset.agentFile || ""); vscode.postMessage({ type: "applyAgentPatch", runId: run.id, paths }); });
-    item.querySelector("[data-agent-merge]")?.addEventListener("click", () => vscode.postMessage({ type: "mergeAgentWorktree", runId: run.id }));
-    item.querySelector("[data-agent-cleanup]")?.addEventListener("click", () => vscode.postMessage({ type: "cleanupAgentWorktree", runId: run.id }));
-    item.querySelectorAll<HTMLButtonElement>("[data-agent-diff]").forEach((button) => button.addEventListener("click", () => vscode.postMessage({ type: "openAgentDiff", runId: run.id, path: button.dataset.agentDiff || "" })));
+      ${run.result ? `<div class="agent-preview">${escapeHtml(previewText(run.result, 160) || "Open inspector for the full result.")}</div>` : ""}
+      ${run.worktree ? `<div class="agent-preview">Worktree ${escapeHtml(run.worktree.lifecycle)} · ${escapeHtml(String((run.changes || []).length))} files${run.validation ? ` · validation ${run.validation.ok ? "passed" : "failed"}` : ""}</div>` : ""}
+      <div class="agent-actions"><button data-agent-inspect>Inspect</button><button data-agent-stop="${escapeHtml(run.id)}" ${["succeeded", "failed", "cancelled"].includes(run.status) ? "disabled" : ""}>Stop</button><button data-agent-retry="${escapeHtml(run.id)}">Retry</button></div>`;
+    item.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("button")) return;
+      selectAgentRun(run.id);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectAgentRun(run.id);
+      }
+    });
+    item.querySelector("[data-agent-inspect]")?.addEventListener("click", (event) => { event.stopPropagation(); selectAgentRun(run.id); });
+    item.querySelector("[data-agent-stop]")?.addEventListener("click", (event) => { event.stopPropagation(); vscode.postMessage({ type: "stopAgentLab", runId: run.id }); });
+    item.querySelector("[data-agent-retry]")?.addEventListener("click", (event) => { event.stopPropagation(); vscode.postMessage({ type: "retryAgentLab", runId: run.id }); });
     agentLabRuns.append(item);
+  }
+
+  function selectAgentRun(runId: string) {
+    selectedRunId = runId;
+    if (!runId) selectedInspectorTab = "result";
+    renderArtifactInspector();
+    agentLabRuns.querySelectorAll<HTMLElement>("[data-agent-run-id]").forEach((card) => {
+      const selected = card.dataset.agentRunId === runId;
+      card.classList.toggle("selected", selected);
+      card.setAttribute("aria-pressed", String(selected));
+    });
+  }
+
+  function renderArtifactInspector() {
+    const run = latestAgentRuns.find((item) => item.id === selectedRunId);
+    artifactInspector.classList.toggle("hidden", !run);
+    if (!run) {
+      inspectorTitle.textContent = "Artifacts";
+      inspectorMeta.textContent = "Select a run to inspect results, sources, and traces.";
+      inspectorTabs.textContent = "";
+      inspectorBody.textContent = "";
+      return;
+    }
+    const sources = run.sources?.length ? run.sources : extractAgentSources(run);
+    const tabs = inspectorTabList(run, sources);
+    if (!tabs.includes(selectedInspectorTab)) selectedInspectorTab = tabs[0] || "result";
+    inspectorTitle.textContent = run.roleName;
+    inspectorMeta.textContent = `${displayRunStatus(run).label} · ${shortModel(run.model)} · ${run.toolCallCount || 0}/${run.maxToolCalls || "—"} tools`;
+    inspectorTabs.textContent = "";
+    for (const tab of tabs) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = inspectorTabLabel(tab, run, sources);
+      button.classList.toggle("active", tab === selectedInspectorTab);
+      button.setAttribute("aria-pressed", String(tab === selectedInspectorTab));
+      button.addEventListener("click", () => { selectedInspectorTab = tab; renderArtifactInspector(); });
+      inspectorTabs.append(button);
+    }
+    inspectorBody.textContent = "";
+    inspectorBody.append(renderInspectorSection(run, sources, selectedInspectorTab));
+  }
+
+  function inspectorTabList(run: AgentRunSnapshot, sources: AgentSource[]): string[] {
+    const tabs = ["result"];
+    if (sources.length) tabs.push("sources");
+    if (run.toolEvents?.length) tabs.push("trace");
+    if (run.worktree) tabs.push("worktree");
+    if (run.audit?.length) tabs.push("audit");
+    return tabs;
+  }
+
+  function inspectorTabLabel(tab: string, run: AgentRunSnapshot, sources: AgentSource[]): string {
+    if (tab === "sources") return `Sources (${sources.length})`;
+    if (tab === "trace") return `Trace (${run.toolEvents?.length || 0})`;
+    if (tab === "worktree") return `Worktree (${(run.changes || []).length})`;
+    if (tab === "audit") return `Audit (${run.audit?.length || 0})`;
+    return "Result";
+  }
+
+  function renderInspectorSection(run: AgentRunSnapshot, sources: AgentSource[], tab: string): HTMLElement {
+    const section = document.createElement("div");
+    section.className = "inspector-section";
+    if (tab === "sources") {
+      if (!sources.length) {
+        section.textContent = "No sources captured for this run.";
+        return section;
+      }
+      for (const source of sources) {
+        const card = document.createElement("article");
+        card.className = `source-card ${source.status} ${source.kind}`;
+        const title = document.createElement("strong");
+        title.textContent = source.title || source.url;
+        const meta = document.createElement("span");
+        meta.textContent = `${source.kind} · ${source.status}${source.tool ? ` · ${source.tool}` : ""}`;
+        const link = document.createElement("button");
+        link.type = "button";
+        link.className = "source-link";
+        link.textContent = source.url;
+        link.addEventListener("click", () => vscode.postMessage({ type: "openLink", href: source.url }));
+        card.append(title, meta, link);
+        if (source.note) {
+          const note = document.createElement("small");
+          note.textContent = source.note;
+          card.append(note);
+        }
+        section.append(card);
+      }
+      return section;
+    }
+    if (tab === "trace") {
+      const counts = document.createElement("div");
+      counts.className = "inspector-note";
+      counts.textContent = Object.entries(run.toolCounts || {}).map(([tool, count]) => `${tool}: ${count}`).join(" · ") || "No tool counts.";
+      section.append(counts);
+      for (const event of run.toolEvents || []) {
+        const row = document.createElement("details");
+        row.className = `trace-row ${event.isError ? "failed" : event.status || ""}`;
+        const summary = document.createElement("summary");
+        summary.textContent = `${event.tool} · ${event.status || "tool"}`;
+        row.append(summary);
+        if (event.args && Object.keys(event.args).length) {
+          const args = document.createElement("pre");
+          args.textContent = pretty(event.args);
+          row.append(args);
+        }
+        if (event.result) {
+          const output = document.createElement("pre");
+          output.textContent = event.result;
+          row.append(output);
+        }
+        section.append(row);
+      }
+      return section;
+    }
+    if (tab === "worktree" && run.worktree) {
+      const summary = document.createElement("div");
+      summary.className = "inspector-note";
+      summary.textContent = `${run.worktree.lifecycle} · ${run.worktree.branch}`;
+      const path = document.createElement("code");
+      path.textContent = run.worktree.path;
+      section.append(summary, path);
+      if (run.validation) {
+        const validation = document.createElement("div");
+        validation.className = `agent-validation ${run.validation.ok ? "ok" : "fail"}`;
+        validation.textContent = `Validation: ${run.validation.ok ? "passed" : "failed"} — ${run.validation.output.slice(-500)}`;
+        section.append(validation);
+      }
+      const files = document.createElement("div");
+      files.className = "agent-files";
+      files.innerHTML = (run.changes || []).map((file) => `<label><input type="checkbox" data-agent-file="${escapeHtml(file.path)}" checked> <code>${escapeHtml(file.status)} ${escapeHtml(file.path)}</code> <button type="button" data-agent-diff="${escapeHtml(file.path)}">Diff</button></label>`).join("") || "No changes captured.";
+      const actions = document.createElement("div");
+      actions.className = "agent-actions";
+      actions.innerHTML = `<button type="button" data-agent-review>Refresh changes</button><button type="button" data-agent-validate>Validate</button><button type="button" data-agent-apply>Apply selected</button><button type="button" data-agent-merge>Merge…</button><button type="button" data-agent-cleanup>Clean up</button>`;
+      actions.querySelector("[data-agent-review]")?.addEventListener("click", () => vscode.postMessage({ type: "reviewAgentWorktree", runId: run.id }));
+      actions.querySelector("[data-agent-validate]")?.addEventListener("click", () => vscode.postMessage({ type: "validateAgentWorktree", runId: run.id, command: "" }));
+      actions.querySelector("[data-agent-apply]")?.addEventListener("click", () => {
+        const paths = Array.from(files.querySelectorAll<HTMLInputElement>("[data-agent-file]:checked")).map((input) => input.dataset.agentFile || "");
+        vscode.postMessage({ type: "applyAgentPatch", runId: run.id, paths });
+      });
+      actions.querySelector("[data-agent-merge]")?.addEventListener("click", () => vscode.postMessage({ type: "mergeAgentWorktree", runId: run.id }));
+      actions.querySelector("[data-agent-cleanup]")?.addEventListener("click", () => vscode.postMessage({ type: "cleanupAgentWorktree", runId: run.id }));
+      files.querySelectorAll<HTMLButtonElement>("[data-agent-diff]").forEach((button) => button.addEventListener("click", () => vscode.postMessage({ type: "openAgentDiff", runId: run.id, path: button.dataset.agentDiff || "" })));
+      section.append(files, actions);
+      return section;
+    }
+    if (tab === "audit") {
+      const list = document.createElement("ol");
+      list.className = "audit-list";
+      for (const line of run.audit || []) {
+        const item = document.createElement("li");
+        item.textContent = line;
+        list.append(item);
+      }
+      section.append(list);
+      return section;
+    }
+    if (run.error) {
+      const error = document.createElement("div");
+      error.className = "agent-error";
+      error.textContent = run.error;
+      section.append(error);
+    }
+    if (run.result) {
+      const result = document.createElement("div");
+      result.className = "markdown";
+      result.innerHTML = DOMPurify.sanitize(markdown.render(run.result));
+      section.append(result);
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "inspector-note";
+      empty.textContent = run.progress || "No result yet.";
+      section.append(empty);
+    }
+    return section;
   }
 
   function displayRunStatus(run: AgentRunSnapshot): { label: string; className: string } {

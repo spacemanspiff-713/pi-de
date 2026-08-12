@@ -1,6 +1,6 @@
 # Phase 5B — Chat Window UI/UX Improvements Discovery
 
-Status: discovery complete; implementation slices 5B.1 and 5B.2 shipped in v0.9.0. Later slices remain design only.
+Status: discovery complete; implementation slices 5B.1 and 5B.2 shipped in v0.9.0; 5B.3 shipped in v0.10.0. Later slices remain design only.
 
 ## Goal
 
@@ -415,11 +415,12 @@ src/controllers/
 - Preserved role selections across telemetry refreshes.
 - Kept existing worktree diff/validation/patch/merge controls.
 
-### 5B.3 — Artifact inspector
+### 5B.3 — Artifact inspector — shipped in v0.10.0
 
-- Add selected-run inspector panel.
-- Move long logs/results out of cards.
-- Add source/citation cards.
+- Added a selected-run inspector under Agent lanes for the narrow sidebar.
+- Moved long results, tool traces, worktree review, and audit logs out of run cards.
+- Added source/citation cards from tool fetch metadata plus cited URLs, with official/secondary/community and failed-fetch tags.
+- Kept worktree review/validation/patch/merge controls on the selected run.
 
 ### 5B.4 — Dispatch console
 
@@ -440,7 +441,7 @@ src/controllers/
 
 ## First implementation slice result
 
-**5B.1 + 5B.2 shipped in v0.9.0.**
+**5B.1 + 5B.2 shipped in v0.9.0. 5B.3 shipped in v0.10.0.**
 
 Why:
 

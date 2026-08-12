@@ -969,8 +969,17 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         <div class="panel-toolbar"><button id="agent-lab-run">Run selected</button><button id="agent-lab-stop">Stop all</button></div>
       </section>
       <details class="role-roster" open><summary>Role roster</summary><div id="agent-lab-roles" class="panel-list compact"></div></details>
-      <div class="panel-section-title">Agent lanes</div>
-      <div id="agent-lab-runs" class="agent-run-list"></div>
+      <div class="swarm-lanes">
+        <div>
+          <div class="panel-section-title">Agent lanes</div>
+          <div id="agent-lab-runs" class="agent-run-list"></div>
+        </div>
+        <aside id="artifact-inspector" class="artifact-inspector hidden" aria-label="Selected agent artifacts">
+          <header class="inspector-header"><div><strong id="inspector-title">Artifacts</strong><span id="inspector-meta">Select a run to inspect results, sources, and traces.</span></div><button id="inspector-close" type="button" aria-label="Close artifact inspector">×</button></header>
+          <nav id="inspector-tabs" class="inspector-tabs" aria-label="Artifact sections"></nav>
+          <div id="inspector-body" class="inspector-body"></div>
+        </aside>
+      </div>
     </section>
   </section>
   <section id="changes-panel" class="control-panel hidden" aria-label="PiDE changes">
