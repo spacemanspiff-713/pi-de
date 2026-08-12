@@ -319,8 +319,16 @@ markdown.renderer.rules.fence = (tokens, index) => {
       input.value = role.id;
       input.checked = ["architect", "explorer", "reviewer"].includes(role.id);
       const body = document.createElement("span");
-      body.innerHTML = `<strong>${escapeHtml(role.name)}</strong><small>${escapeHtml(role.source)} · ${escapeHtml(role.description || "")}</small>`;
-      label.append(input, body);
+      body.innerHTML = `<strong>${escapeHtml(role.name)}</strong><small>${escapeHtml(role.source)} · ${escapeHtml(role.description || "")}</small><small>model: ${escapeHtml(role.model || "default")} · tools: ${escapeHtml((role.tools || []).join(", "))} · cap: ${escapeHtml(String(role.maxToolCalls || "default"))}</small>`;
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", (event) => { event.preventDefault(); vscode.postMessage({ type: "editAgentRole", roleId: role.id }); });
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.textContent = "Reset";
+      reset.addEventListener("click", (event) => { event.preventDefault(); vscode.postMessage({ type: "resetAgentRole", roleId: role.id }); });
+      label.append(input, body, edit, reset);
       agentLabRoles.append(label);
     }
     agentLabRuns.textContent = "";
@@ -330,8 +338,9 @@ markdown.renderer.rules.fence = (tokens, index) => {
       const resultHtml = run.result ? DOMPurify.sanitize(markdown.render(run.result)) : "";
       item.innerHTML = `<header><strong>${escapeHtml(run.roleName)}</strong><span>${escapeHtml(run.status)}</span></header>
         <div class="agent-progress">${escapeHtml(run.progress || "")}${run.durationMs ? ` · ${Math.round(run.durationMs / 1000)}s` : ""}</div>
+        <div class="agent-tools">model: ${escapeHtml(run.model || "default")} · tools: ${escapeHtml(String(run.toolCallCount || 0))}/${escapeHtml(String(run.maxToolCalls || "—"))} · last: ${escapeHtml(run.lastTool || "none")}</div>
         ${run.error ? `<div class="agent-error">${escapeHtml(run.error)}</div>` : ""}
-        ${run.toolEvents?.length ? `<div class="agent-tools">${run.toolEvents.slice(-8).map((tool) => escapeHtml(tool.tool)).join(" · ")}</div>` : ""}
+        ${run.toolEvents?.length ? `<details class="agent-tool-breakdown"><summary>Tool breakdown</summary><div>${Object.entries(run.toolCounts || {}).map(([tool, count]) => `${escapeHtml(tool)}: ${escapeHtml(String(count))}`).join(" · ")}</div><div>${run.toolEvents.slice(-12).map((tool) => escapeHtml(tool.tool)).join(" · ")}</div></details>` : ""}
         ${resultHtml ? `<details ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
         ${run.worktree ? `<details class="agent-worktree" open><summary>Worktree review · ${escapeHtml(run.worktree.lifecycle)} · ${escapeHtml(run.worktree.branch)}</summary>
           <div class="agent-tools">${escapeHtml(run.worktree.path)}</div>

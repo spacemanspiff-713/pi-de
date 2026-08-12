@@ -21294,8 +21294,22 @@
         input.value = role.id;
         input.checked = ["architect", "explorer", "reviewer"].includes(role.id);
         const body = document.createElement("span");
-        body.innerHTML = `<strong>${escapeHtml2(role.name)}</strong><small>${escapeHtml2(role.source)} \xB7 ${escapeHtml2(role.description || "")}</small>`;
-        label.append(input, body);
+        body.innerHTML = `<strong>${escapeHtml2(role.name)}</strong><small>${escapeHtml2(role.source)} \xB7 ${escapeHtml2(role.description || "")}</small><small>model: ${escapeHtml2(role.model || "default")} \xB7 tools: ${escapeHtml2((role.tools || []).join(", "))} \xB7 cap: ${escapeHtml2(String(role.maxToolCalls || "default"))}</small>`;
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.textContent = "Edit";
+        edit.addEventListener("click", (event) => {
+          event.preventDefault();
+          vscode.postMessage({ type: "editAgentRole", roleId: role.id });
+        });
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.textContent = "Reset";
+        reset.addEventListener("click", (event) => {
+          event.preventDefault();
+          vscode.postMessage({ type: "resetAgentRole", roleId: role.id });
+        });
+        label.append(input, body, edit, reset);
         agentLabRoles.append(label);
       }
       agentLabRuns.textContent = "";
@@ -21305,8 +21319,9 @@
         const resultHtml = run.result ? purify.sanitize(markdown.render(run.result)) : "";
         item.innerHTML = `<header><strong>${escapeHtml2(run.roleName)}</strong><span>${escapeHtml2(run.status)}</span></header>
         <div class="agent-progress">${escapeHtml2(run.progress || "")}${run.durationMs ? ` \xB7 ${Math.round(run.durationMs / 1e3)}s` : ""}</div>
+        <div class="agent-tools">model: ${escapeHtml2(run.model || "default")} \xB7 tools: ${escapeHtml2(String(run.toolCallCount || 0))}/${escapeHtml2(String(run.maxToolCalls || "\u2014"))} \xB7 last: ${escapeHtml2(run.lastTool || "none")}</div>
         ${run.error ? `<div class="agent-error">${escapeHtml2(run.error)}</div>` : ""}
-        ${run.toolEvents?.length ? `<div class="agent-tools">${run.toolEvents.slice(-8).map((tool) => escapeHtml2(tool.tool)).join(" \xB7 ")}</div>` : ""}
+        ${run.toolEvents?.length ? `<details class="agent-tool-breakdown"><summary>Tool breakdown</summary><div>${Object.entries(run.toolCounts || {}).map(([tool, count]) => `${escapeHtml2(tool)}: ${escapeHtml2(String(count))}`).join(" \xB7 ")}</div><div>${run.toolEvents.slice(-12).map((tool) => escapeHtml2(tool.tool)).join(" \xB7 ")}</div></details>` : ""}
         ${resultHtml ? `<details ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
         ${run.worktree ? `<details class="agent-worktree" open><summary>Worktree review \xB7 ${escapeHtml2(run.worktree.lifecycle)} \xB7 ${escapeHtml2(run.worktree.branch)}</summary>
           <div class="agent-tools">${escapeHtml2(run.worktree.path)}</div>

@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -18,6 +18,10 @@ export interface AgentRole {
   source: "builtin" | "user" | "project";
   prompt: string;
   mode?: "read-only" | "worktree";
+  skills?: string[];
+  maxToolCalls?: number;
+  maxDurationMs?: number;
+  filePath?: string;
 }
 
 export interface AgentRunSnapshot {
@@ -35,6 +39,11 @@ export interface AgentRunSnapshot {
   startedAt?: number;
   finishedAt?: number;
   toolEvents: Array<{ tool: string; status: string }>;
+  toolCounts: Record<string, number>;
+  toolCallCount: number;
+  maxToolCalls: number;
+  maxDurationMs: number;
+  lastTool?: string;
   worktree?: { root: string; path: string; branch: string; baseCommit: string; baselineStatus: string; lifecycle: "active" | "complete" | "integrated" | "abandoned" | "cleaned"; createdAt: number };
   changes?: ChangedFile[];
   validation?: { ok: boolean; output: string };
@@ -51,7 +60,7 @@ const READ_ONLY_TOOLS = ["read", "codebase_search", "filesystem_map", "git_chang
 const FORBIDDEN_TOOLS = new Set(["edit", "write", "bash", "mcpScript", "shopify_dev_mcp_learn_shopify_api", "mcp"]);
 
 export class AgentLabController implements vscode.Disposable {
-  private readonly runs = new Map<string, { snapshot: AgentRunSnapshot; runtime?: PiRuntime; cleanup?: string; unsubscribe?: () => void; worktree?: AgentWorktree }>();
+  private readonly runs = new Map<string, { snapshot: AgentRunSnapshot; runtime?: PiRuntime; cleanup?: string; unsubscribe?: () => void; worktree?: AgentWorktree; timer?: NodeJS.Timeout }>();
   private queue: QueueItem[] = [];
   private active = 0;
   private rolesCache?: AgentRole[];
@@ -71,6 +80,10 @@ export class AgentLabController implements vscode.Disposable {
   async restore(): Promise<void> {
     const stored = this.context.workspaceState.get<AgentRunSnapshot[]>("pide.agentLabRuns", []);
     for (const snapshot of stored) {
+      snapshot.toolCounts ??= {};
+      snapshot.toolCallCount ??= snapshot.toolEvents?.length ?? 0;
+      snapshot.maxToolCalls ??= vscode.workspace.getConfiguration("pide").get<number>("agentLabMaxToolCalls", 24);
+      snapshot.maxDurationMs ??= vscode.workspace.getConfiguration("pide").get<number>("agentLabMaxDurationMinutes", 5) * 60_000;
       if (!snapshot.worktree) continue;
       const worktree: AgentWorktree = { id: snapshot.id, ...snapshot.worktree };
       this.runs.set(snapshot.id, { snapshot, worktree });
@@ -89,14 +102,38 @@ export class AgentLabController implements vscode.Disposable {
     if (!task.trim() || !selected.length) return;
     const budget = vscode.workspace.getConfiguration("pide").get<number>("agentLabTokenBudget", 12_000);
     for (const role of selected) {
+      const maxToolCalls = role.maxToolCalls ?? vscode.workspace.getConfiguration("pide").get<number>("agentLabMaxToolCalls", 24);
+      const maxDurationMs = role.maxDurationMs ?? vscode.workspace.getConfiguration("pide").get<number>("agentLabMaxDurationMinutes", 5) * 60_000;
       const run: AgentRunSnapshot = {
-        id: randomUUID(), roleId: role.id, roleName: role.name, status: "queued", progress: `Queued with ${budget} token budget`, toolEvents: [], audit: [`Queued ${new Date().toISOString()}`],
+        id: randomUUID(), roleId: role.id, roleName: role.name, status: "queued", progress: `Queued with ${budget} token budget`, toolEvents: [], toolCounts: {}, toolCallCount: 0, maxToolCalls, maxDurationMs, model: role.model, audit: [`Queued ${new Date().toISOString()}`],
       };
       this.runs.set(run.id, { snapshot: run });
       this.queue.push({ run, role, task: task.trim().slice(0, 24_000) });
     }
     this.publish();
     void this.pump();
+  }
+
+  async editRole(roleId: string): Promise<void> {
+    const roles = await this.discoverRoles();
+    const role = roles.find((item) => item.id === roleId);
+    if (!role) return;
+    const path = role.filePath ?? await this.writeBuiltinOverride(role);
+    await vscode.window.showTextDocument(vscode.Uri.file(path));
+    this.rolesCache = undefined;
+    await this.open();
+  }
+
+  async resetRole(roleId: string): Promise<void> {
+    const roles = await this.discoverRoles();
+    const role = roles.find((item) => item.id === roleId);
+    if (!role) return;
+    const path = role.filePath ?? join(homedir(), ".pi", "agent", "agents", `${role.id}.md`);
+    const choice = await vscode.window.showWarningMessage(`Reset Agent Lab role override for ${role.name}?`, { modal: true }, "Reset Role");
+    if (choice !== "Reset Role") return;
+    await rm(path, { force: true });
+    this.rolesCache = undefined;
+    await this.open();
   }
 
   async stop(runId?: string): Promise<void> {
@@ -114,6 +151,7 @@ export class AgentLabController implements vscode.Disposable {
     entry.snapshot.finishedAt = Date.now();
     entry.snapshot.durationMs = entry.snapshot.startedAt ? entry.snapshot.finishedAt - entry.snapshot.startedAt : undefined;
     entry.snapshot.progress = "Cancelled";
+    if (entry.timer) clearTimeout(entry.timer);
     await entry.runtime?.stop().catch(() => undefined);
     await this.cleanup(entry);
     this.publish();
@@ -273,22 +311,27 @@ export class AgentLabController implements vscode.Disposable {
         }
         const tool = toolName(event.record);
         if (tool) {
+          item.run.toolCallCount += 1;
+          item.run.toolCounts[tool] = (item.run.toolCounts[tool] ?? 0) + 1;
+          item.run.lastTool = tool;
           item.run.toolEvents.push({ tool, status: String(event.record.type ?? "tool") });
-          item.run.toolEvents = item.run.toolEvents.slice(-40);
+          item.run.toolEvents = item.run.toolEvents.slice(-80);
           const codingViolation = writing ? unsafeCodingTool(event.record, entry.worktree!) : undefined;
-          if ((!writing && FORBIDDEN_TOOLS.has(tool)) || codingViolation) {
+          const toolViolation = !item.role.tools.includes(tool) ? `Tool not allowed for ${item.role.name}: ${tool}` : undefined;
+          const capViolation = item.run.toolCallCount > item.run.maxToolCalls ? `Agent exceeded tool-call cap (${item.run.maxToolCalls})` : undefined;
+          if ((!writing && FORBIDDEN_TOOLS.has(tool)) || codingViolation || toolViolation || capViolation) {
             abortedForTool = true;
             item.run.status = "failed";
-            item.run.error = codingViolation ?? `Forbidden tool attempted: ${tool}`;
-            item.run.progress = "Aborting unsafe tool request.";
+            item.run.error = codingViolation ?? toolViolation ?? capViolation ?? `Forbidden tool attempted: ${tool}`;
+            item.run.progress = "Aborting unsafe or over-budget tool request.";
             void runtime.stop();
-          }
+          } else item.run.progress = `Running · ${item.run.toolCallCount}/${item.run.maxToolCalls} tools · ${tool}`;
         }
         if (event.record.type === "agent_start") {
           item.run.status = "running";
           item.run.progress = "Running";
         }
-        if (event.record.type === "agent_settled") void this.finish(item.run, result || "No textual result returned.");
+        if (event.record.type === "agent_settled") void this.finish(item.run, result);
         this.publish();
       } else if (event.type === "exit" && !event.expected && item.run.status !== "succeeded") {
         this.fail(item.run, abortedForTool ? item.run.error ?? "Forbidden tool attempted" : `Subagent exited with code ${String(event.code)}`);
@@ -303,12 +346,20 @@ export class AgentLabController implements vscode.Disposable {
       approveWorkspace: writing ? config.get<boolean>("approveTrustedWorkspace", true) : false,
     });
     if (!started) return this.fail(item.run, runtime.health?.message ?? "Could not start Pi.");
+    if (item.role.model) await applyRoleModel(runtime, item.role.model, item.run).catch((error) => item.run.audit.push(`Model selection failed: ${error instanceof Error ? error.message : String(error)}`));
     item.run.progress = "Prompt sent";
     this.publish();
     const prompt = writing
       ? codingAgentPrompt(item.role, item.task, entry.worktree!, config.get<number>("agentLabTokenBudget", 12_000))
       : agentPrompt(item.role, item.task, folder.uri.fsPath, config.get<number>("agentLabTokenBudget", 12_000));
     try {
+      const entryForTimer = this.runs.get(item.run.id);
+      if (entryForTimer) entryForTimer.timer = setTimeout(() => {
+        item.run.status = "failed";
+        item.run.error = `Agent exceeded duration cap (${Math.round(item.run.maxDurationMs / 60_000)}m)`;
+        item.run.progress = "Aborting duration cap.";
+        void runtime.stop();
+      }, item.run.maxDurationMs);
       await runtime.client?.request({ type: "prompt", message: prompt }, 60_000);
     } catch (error) {
       this.fail(item.run, error instanceof Error ? error.message : String(error));
@@ -318,11 +369,19 @@ export class AgentLabController implements vscode.Disposable {
   private async finish(run: AgentRunSnapshot, result: string): Promise<void> {
     const entry = this.runs.get(run.id);
     if (!entry || ["failed", "cancelled"].includes(run.status)) return;
-    run.status = "succeeded";
-    run.result = result.slice(0, 64_000);
-    run.progress = "Complete";
+    if (!result.trim() && !entry.worktree) {
+      run.status = "failed";
+      run.result = "No final answer was returned before the agent stopped.";
+      run.error = "No final answer returned";
+      run.progress = "Finished without a final answer";
+    } else {
+      run.status = "succeeded";
+      run.result = (result.trim() || "No textual result returned; review captured worktree changes.").slice(0, 64_000);
+      run.progress = "Complete";
+    }
     run.finishedAt = Date.now();
     run.durationMs = run.startedAt ? run.finishedAt - run.startedAt : undefined;
+    if (entry.timer) clearTimeout(entry.timer);
     await entry.runtime?.stop().catch(() => undefined);
     if (entry.worktree) {
       run.changes = await captureAgentChanges(entry.worktree);
@@ -339,6 +398,7 @@ export class AgentLabController implements vscode.Disposable {
     run.progress = "Failed";
     run.finishedAt = Date.now();
     run.durationMs = run.startedAt ? run.finishedAt - run.startedAt : undefined;
+    if (entry?.timer) clearTimeout(entry.timer);
     void entry?.runtime?.stop();
     void (entry ? this.cleanup(entry) : Promise.resolve());
     this.publish();
@@ -349,6 +409,14 @@ export class AgentLabController implements vscode.Disposable {
     entry.unsubscribe = undefined;
     if (entry.cleanup) await rm(entry.cleanup, { recursive: true, force: true }).catch(() => undefined);
     entry.cleanup = undefined;
+  }
+
+  private async writeBuiltinOverride(role: AgentRole): Promise<string> {
+    const dir = join(homedir(), ".pi", "agent", "agents");
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${role.id}.md`);
+    await writeFile(path, roleToMarkdown(role), "utf8");
+    return path;
   }
 
   private maxConcurrent(): number {
@@ -367,16 +435,17 @@ export class AgentLabController implements vscode.Disposable {
 }
 
 function builtinRoles(): AgentRole[] {
-  const base = { tools: READ_ONLY_TOOLS, invocation: "manual" as const, source: "builtin" as const };
+  const base = { invocation: "manual" as const, source: "builtin" as const };
+  const codeTools = ["read", "codebase_search", "filesystem_map", "git_change_map"];
   return [
-    { ...base, id: "architect", name: "Architect", description: "Designs approaches, boundaries, risks, and implementation plans.", prompt: "Focus on architecture, sequencing, interfaces, and risk tradeoffs." },
-    { ...base, id: "explorer", name: "Explorer", description: "Maps unfamiliar code and finds likely edit/test targets.", prompt: "Explore structure and identify relevant files, symbols, and dependencies." },
-    { ...base, id: "reviewer", name: "Reviewer", description: "Reviews changes for correctness, maintainability, and regressions.", prompt: "Review critically. Prioritize concrete issues and verification gaps." },
-    { ...base, id: "tester", name: "Tester", description: "Plans validation and diagnoses failures without modifying files.", prompt: "Focus on tests, reproduction, logs, and minimal validation commands." },
-    { ...base, id: "researcher", name: "Researcher", description: "Gathers bounded external or documentation context.", prompt: "Research only what is necessary. Cite compact findings and uncertainty." },
-    { ...base, id: "security", name: "Security", description: "Looks for security, privacy, trust, and supply-chain risks.", prompt: "Focus on concrete abuse cases, secrets, auth boundaries, and mitigations." },
-    { ...base, id: "documentation", name: "Documentation", description: "Improves explanations, docs structure, and user-facing clarity.", prompt: "Focus on concise documentation gaps and suggested wording." },
-    { id: "implementer", name: "Implementer", description: "Implements an approved task in an isolated Git worktree for review.", tools: ["read", "edit", "write"], invocation: "manual", source: "builtin", mode: "worktree", prompt: "Implement only the requested change. Work only inside your assigned worktree. Do not use shell tools; PiDE runs validation separately. Summarize changed files, tests to run, risks, and review notes." },
+    { ...base, id: "architect", name: "Architect", description: "Designs approaches, boundaries, risks, and implementation plans.", tools: [...codeTools, "math_tool"], maxToolCalls: 16, prompt: "Focus on architecture, sequencing, interfaces, and risk tradeoffs. Avoid broad web research unless explicitly requested." },
+    { ...base, id: "explorer", name: "Explorer", description: "Maps unfamiliar code and finds likely edit/test targets.", tools: codeTools, maxToolCalls: 18, prompt: "Explore structure and identify relevant files, symbols, and dependencies. Prefer filesystem_map and codebase_search over repeated reads." },
+    { ...base, id: "reviewer", name: "Reviewer", description: "Reviews changes for correctness, maintainability, and regressions.", tools: [...codeTools, "test_failure_summarizer"], maxToolCalls: 18, prompt: "Review critically. Prioritize concrete issues and verification gaps. Do not browse the web unless asked." },
+    { ...base, id: "tester", name: "Tester", description: "Plans validation and diagnoses failures without modifying files.", tools: [...codeTools, "test_failure_summarizer"], maxToolCalls: 16, prompt: "Focus on tests, reproduction, logs, and minimal validation commands." },
+    { ...base, id: "researcher", name: "Researcher", description: "Gathers bounded external or documentation context.", tools: ["web_fetch", "brave_search", "read"], maxToolCalls: 14, prompt: "Research only what is necessary. Prefer official documentation and primary sources. Return 3-6 cited links, key findings, uncertainty, and recommended next steps." },
+    { ...base, id: "security", name: "Security", description: "Looks for security, privacy, trust, and supply-chain risks.", tools: [...codeTools, "web_fetch"], maxToolCalls: 16, prompt: "Focus on concrete abuse cases, secrets, auth boundaries, and mitigations." },
+    { ...base, id: "documentation", name: "Documentation", description: "Improves explanations, docs structure, and user-facing clarity.", tools: ["read", "codebase_search", "web_fetch", "brave_search"], maxToolCalls: 14, prompt: "Focus on concise documentation gaps and suggested wording. When asked for docs, prefer official docs and return links plus concrete writing/styling recommendations." },
+    { ...base, id: "implementer", name: "Implementer", description: "Implements an approved task in an isolated Git worktree for review.", tools: ["read", "edit", "write"], maxToolCalls: 40, mode: "worktree", prompt: "Implement only the requested change. Work only inside your assigned worktree. Do not use shell tools; PiDE runs validation separately. Summarize changed files, tests to run, risks, and review notes." },
   ];
 }
 
@@ -393,16 +462,31 @@ async function parseRole(path: string, source: "user" | "project"): Promise<Agen
   if (!raw.trim()) return undefined;
   const { frontmatter, body } = splitFrontmatter(raw);
   const name = frontmatter.name || basename(path, ".md");
+  const mode = frontmatter.mode === "worktree" ? "worktree" : "read-only";
+  const tools = parseList(frontmatter.tools || READ_ONLY_TOOLS.join(" "));
   return {
-    id: `${source}:${slug(name)}`,
+    id: frontmatter.id || `${source}:${slug(name)}`,
     name,
     description: frontmatter.description || body.split(/\r?\n/).find((line) => line.trim())?.slice(0, 160) || "Custom read-only Agent Lab role",
-    model: frontmatter.model,
-    tools: (frontmatter.tools ? frontmatter.tools.split(/[,\s]+/).filter(Boolean) : READ_ONLY_TOOLS).filter((tool) => !FORBIDDEN_TOOLS.has(tool)),
+    model: frontmatter.model || undefined,
+    tools: mode === "worktree" ? tools.filter((tool) => ["read", "edit", "write"].includes(tool)) : tools.filter((tool) => !FORBIDDEN_TOOLS.has(tool)),
     invocation: frontmatter.invocation === "automatic" ? "automatic" : "manual",
     source,
     prompt: body.trim().slice(0, 8_000),
+    skills: parseList(frontmatter.skills),
+    maxToolCalls: frontmatter.maxToolCalls ? Number(frontmatter.maxToolCalls) : undefined,
+    maxDurationMs: frontmatter.maxDurationMinutes ? Number(frontmatter.maxDurationMinutes) * 60_000 : undefined,
+    mode,
+    filePath: path,
   };
+}
+
+function roleToMarkdown(role: AgentRole): string {
+  return `---\nid: ${role.id}\nname: ${role.name}\ndescription: ${role.description}\nmodel: ${role.model ?? ""}\ntools: ${role.tools.join(" ")}\nskills: ${(role.skills ?? []).join(" ")}\ninvocation: ${role.invocation}\nmode: ${role.mode ?? "read-only"}\nmaxToolCalls: ${role.maxToolCalls ?? ""}\nmaxDurationMinutes: ${role.maxDurationMs ? Math.round(role.maxDurationMs / 60_000) : ""}\n---\n\n${role.prompt}\n`;
+}
+
+function parseList(value?: string): string[] {
+  return value ? value.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean) : [];
 }
 
 function splitFrontmatter(raw: string): { frontmatter: Record<string, string>; body: string } {
@@ -418,11 +502,21 @@ function splitFrontmatter(raw: string): { frontmatter: Record<string, string>; b
 }
 
 function codingAgentPrompt(role: AgentRole, task: string, worktree: AgentWorktree, budget: number): string {
-  return `You are a PiDE coding subagent named ${role.name}.\n\nWORKTREE SAFETY CONTRACT:\n- You may modify files only inside this assigned Git worktree: ${worktree.path}\n- Allowed tools are exactly: read, edit, write. Any other tool request is aborted.\n- Never access, modify, or run commands in the primary workspace: ${worktree.root}\n- Do not commit, merge, rebase, push, alter Git remotes, or delete the worktree.\n- Implement only the requested task. Keep scope narrow. PiDE runs validation separately.\n- Token budget: ${budget}. Stop early if the budget is at risk.\n\nRole instructions:\n${role.prompt}\n\nTask:\n${task}\n\nReturn a compact summary of changed files, validation to run, risks, and review notes. Your work will be reviewed before any integration.`;
+  return `You are a PiDE coding subagent named ${role.name}.\n\nWORKTREE SAFETY CONTRACT:\n- You may modify files only inside this assigned Git worktree: ${worktree.path}\n- Allowed tools are exactly: read, edit, write. Any other tool request is aborted.\n- Preferred skills/context: ${(role.skills ?? []).join(", ") || "none"}.\n- Never access, modify, or run commands in the primary workspace: ${worktree.root}\n- Do not commit, merge, rebase, push, alter Git remotes, or delete the worktree.\n- Implement only the requested task. Keep scope narrow. PiDE runs validation separately.\n- Token budget: ${budget}. Stop early if the budget is at risk.\n\nRole instructions:\n${role.prompt}\n\nTask:\n${task}\n\nReturn a compact summary of changed files, validation to run, risks, and review notes. Your work will be reviewed before any integration.`;
 }
 
 function agentPrompt(role: AgentRole, task: string, workspacePath: string, budget: number): string {
-  return `You are a PiDE Agent Lab subagent named ${role.name}.\n\nREAD-ONLY SAFETY CONTRACT:\n- Do not modify files, do not write files, do not run shell commands that mutate state, and do not use edit/write/bash.\n- Allowed tool intent: ${role.tools.join(", ")}.\n- Work from an isolated temporary process. Treat workspace path as read-only context: ${workspacePath}.\n- Keep the response bounded. Do not write noisy transcripts to Honcho memory.\n- Token budget: ${budget}. Stop early if the budget is at risk.\n\nRole instructions:\n${role.prompt}\n\nTask from parent PiDE session:\n${task}\n\nReturn: status, key findings, evidence/file references, risks, and recommended next steps. Do not apply changes.`;
+  return `You are a PiDE Agent Lab subagent named ${role.name}.\n\nREAD-ONLY SAFETY CONTRACT:\n- Do not modify files, do not write files, do not run shell commands that mutate state, and do not use edit/write/bash.\n- Allowed tools are exactly: ${role.tools.join(", ")}. Any other tool request is aborted.\n- Preferred skills/context: ${(role.skills ?? []).join(", ") || "none"}.\n- Work from an isolated temporary process. Treat workspace path as read-only context: ${workspacePath}.\n- Keep the response bounded. Do not write noisy transcripts to Honcho memory.\n- Token budget: ${budget}. Stop early if the budget is at risk.\n\nRole instructions:\n${role.prompt}\n\nTask from parent PiDE session:\n${task}\n\nReturn: status, key findings, evidence/file references, risks, and recommended next steps. Do not apply changes.`;
+}
+
+async function applyRoleModel(runtime: PiRuntime, model: string, run: AgentRunSnapshot): Promise<void> {
+  const parts = model.split("/").filter(Boolean);
+  if (parts.length < 2) throw new Error(`Role model must be provider/model: ${model}`);
+  const provider = parts[0];
+  const modelId = parts.slice(1).join("/");
+  await runtime.client?.request({ type: "set_model", provider, modelId }, 60_000);
+  run.model = model;
+  run.audit.push(`Selected role model ${model}`);
 }
 
 function extractTextDelta(record: RpcRecord): string {

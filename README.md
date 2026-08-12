@@ -8,7 +8,7 @@ PiDE gives Pi a first-class home in the editor: streaming conversations, native 
 
 > **Vibe coded with Pi, for Pi.** Every commit in this repo was produced by a Pi coding agent working inside its own PiDE interface. The primary model was `openai-codex/gpt-5.5` with thinking on medium, assisted by `openrouter/deepseek/deepseek-v4-pro` & local `gemma-4-26b-a4b` for faster iteration. Also used `openai-codex/gpt-5.6 Terra ` for architecture review and planning. Pi literally built its own home.
 
-> **Project status:** Early open-source release. v0.7.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+> **Project status:** Early open-source release. v0.8.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## 🙏 Shoutout
 
@@ -122,7 +122,26 @@ Pi extension requests are bridged into VS Code for:
 
 ### Agent Lab
 
-PiDE v0.7 includes Agent Lab. Read-only research roles run in isolated temporary Pi sidecars. The `Implementer` is the sole coding role: it receives a dedicated Git branch/worktree, can use only `read`, `edit`, and `write` against paths inside that worktree, and returns a retained change set for review. PiDE can run configured validation in the worktree, open native VS Code diffs, apply only selected file patches, or—after a modal confirmation and merge-conflict preflight—merge the agent branch. The primary workspace is never given to a coding agent.
+PiDE v0.8 includes Agent Lab control and observability. Built-in roles can be opened as editable Markdown overrides, including model, tools, skills, invocation, mode, tool-call cap, and duration cap. Read-only research roles run in isolated temporary Pi sidecars with exact tool allowlists and live telemetry. The `Implementer` is the sole coding role: it receives a dedicated Git branch/worktree, can use only `read`, `edit`, and `write` against paths inside that worktree, and returns a retained change set for review. PiDE can run configured validation in the worktree, open native VS Code diffs, apply only selected file patches, or—after a modal confirmation and merge-conflict preflight—merge the agent branch. The primary workspace is never given to a coding agent.
+
+Example role override:
+
+```md
+---
+id: researcher
+name: Researcher
+description: Official-docs-first web researcher
+model: openrouter/deepseek/deepseek-v4-pro
+tools: web_fetch brave_search
+skills: docs-search
+invocation: manual
+mode: read-only
+maxToolCalls: 10
+maxDurationMinutes: 4
+---
+
+Prefer official documentation and primary sources. Return 3-6 cited links, key findings, uncertainty, and recommended next steps.
+```
 
 ## Requirements
 
@@ -150,7 +169,7 @@ For Remote SSH, WSL, or development containers, install and configure Pi in that
 - PiDE can keep multiple session tabs open with lazily-started Pi RPC sidecars. Idle background runtimes may be suspended when `pide.maxActiveRuntimes` is exceeded.
 - Native checkpoint review requires a Git worktree. Chat and sessions still work outside Git repositories.
 - The MCP control center expects `pi-mcp-adapter` to be configured through Pi.
-- Agent Lab research roles are read-only. The `Implementer` is write-capable only in a dedicated Git worktree; integrations require explicit review and approval.
+- Agent Lab role overrides are Markdown files under `~/.pi/agent/agents/*.md` or `<project>/.pi/agents/*.md`; malformed or over-broad custom tool policies can still waste tokens, so keep caps low and roles focused.
 - The extension is currently distributed as a locally built VSIX rather than through the Marketplace.
 
 ## Installation
@@ -162,7 +181,7 @@ git clone https://github.com/spacemanspiff-713/pi-de.git
 cd pi-de
 npm install
 npm run package
-code --install-extension pide-0.7.0.vsix --force
+code --install-extension pide-0.8.0.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.
@@ -215,9 +234,11 @@ The header provides shortcuts for:
 | `pide.showThinking` | `true` | Display streamed reasoning in collapsible blocks |
 | `pide.gitCheckpoints` | `true` | Capture a non-destructive pre-task Git checkpoint for review/revert |
 | `pide.maxActiveRuntimes` | `3` | Maximum active Pi sidecars before idle session tabs are suspended |
-| `pide.agentLabMaxConcurrent` | `4` | Maximum read-only Agent Lab subagents that can run concurrently |
+| `pide.agentLabMaxConcurrent` | `4` | Maximum Agent Lab subagents that can run concurrently |
 | `pide.agentLabTokenBudget` | `12000` | Soft per-subagent token budget included in the safety prompt |
 | `pide.agentLabValidationCommand` | `npm test` | Validation command run only in coding-agent worktrees |
+| `pide.agentLabMaxToolCalls` | `24` | Default maximum tool calls per Agent Lab run unless a role override sets `maxToolCalls` |
+| `pide.agentLabMaxDurationMinutes` | `5` | Default maximum run duration unless a role override sets `maxDurationMinutes` |
 
 Your models, providers, API credentials, Pi extensions, skills, prompt templates, sessions, and MCP configuration remain in Pi's normal configuration directories.
 

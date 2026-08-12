@@ -122,6 +122,8 @@ export type WebviewToHostMessage =
   | { type: "runAgentLab"; roleIds: string[]; task: string }
   | { type: "stopAgentLab"; runId?: string }
   | { type: "retryAgentLab"; runId: string }
+  | { type: "editAgentRole"; roleId: string }
+  | { type: "resetAgentRole"; roleId: string }
   | { type: "reviewAgentWorktree"; runId: string }
   | { type: "validateAgentWorktree"; runId: string; command: string }
   | { type: "openAgentDiff"; runId: string; path: string }
@@ -199,6 +201,10 @@ export function parseWebviewMessage(value: unknown): WebviewToHostMessage | unde
   if (["stopAgentLab", "retryAgentLab", "reviewAgentWorktree", "mergeAgentWorktree", "cleanupAgentWorktree"].includes(value.type)) {
     const runId = optionalBoundedString(value.runId, 512);
     return runId === undefined ? undefined : { type: value.type, runId: runId || undefined } as WebviewToHostMessage;
+  }
+  if (["editAgentRole", "resetAgentRole"].includes(value.type)) {
+    const roleId = boundedString(value.roleId, 512);
+    return roleId === undefined ? undefined : { type: value.type, roleId } as WebviewToHostMessage;
   }
   if (value.type === "validateAgentWorktree") {
     const runId = boundedString(value.runId, 512);
