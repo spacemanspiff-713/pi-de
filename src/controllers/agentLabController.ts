@@ -1,10 +1,12 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
 import type { RpcRecord } from "../piRpcClient";
 import { PiRuntime, type PiRuntimeEvent } from "../runtime/piRuntime";
+import { agentAfterContent, agentBeforeContent, applyAgentPatch, captureAgentChanges, commitAgentWorktree, createAgentPatch, createAgentWorktree, mergeAgentBranch, removeAgentWorktree, validateAgentWorktree, worktreeExists, type AgentWorktree } from "./agentWorktreeManager";
+import type { ChangedFile } from "../changeReview";
 
 export interface AgentRole {
   id: string;
@@ -15,6 +17,7 @@ export interface AgentRole {
   invocation: "manual" | "automatic";
   source: "builtin" | "user" | "project";
   prompt: string;
+  mode?: "read-only" | "worktree";
 }
 
 export interface AgentRunSnapshot {
@@ -32,6 +35,10 @@ export interface AgentRunSnapshot {
   startedAt?: number;
   finishedAt?: number;
   toolEvents: Array<{ tool: string; status: string }>;
+  worktree?: { root: string; path: string; branch: string; baseCommit: string; baselineStatus: string; lifecycle: "active" | "complete" | "integrated" | "abandoned" | "cleaned"; createdAt: number };
+  changes?: ChangedFile[];
+  validation?: { ok: boolean; output: string };
+  audit: string[];
 }
 
 interface QueueItem {
@@ -44,7 +51,7 @@ const READ_ONLY_TOOLS = ["read", "codebase_search", "filesystem_map", "git_chang
 const FORBIDDEN_TOOLS = new Set(["edit", "write", "bash", "mcpScript", "shopify_dev_mcp_learn_shopify_api", "mcp"]);
 
 export class AgentLabController implements vscode.Disposable {
-  private readonly runs = new Map<string, { snapshot: AgentRunSnapshot; runtime?: PiRuntime; cleanup?: string; unsubscribe?: () => void }>();
+  private readonly runs = new Map<string, { snapshot: AgentRunSnapshot; runtime?: PiRuntime; cleanup?: string; unsubscribe?: () => void; worktree?: AgentWorktree }>();
   private queue: QueueItem[] = [];
   private active = 0;
   private rolesCache?: AgentRole[];
@@ -61,6 +68,16 @@ export class AgentLabController implements vscode.Disposable {
     this.post({ type: "agentLab", roles: await this.discoverRoles(), runs: this.snapshots(), maxConcurrent: this.maxConcurrent() });
   }
 
+  async restore(): Promise<void> {
+    const stored = this.context.workspaceState.get<AgentRunSnapshot[]>("pide.agentLabRuns", []);
+    for (const snapshot of stored) {
+      if (!snapshot.worktree) continue;
+      const worktree: AgentWorktree = { id: snapshot.id, ...snapshot.worktree };
+      this.runs.set(snapshot.id, { snapshot, worktree });
+    }
+    await this.recoverAbandoned();
+  }
+
   async refresh(): Promise<void> {
     this.rolesCache = undefined;
     await this.open();
@@ -73,7 +90,7 @@ export class AgentLabController implements vscode.Disposable {
     const budget = vscode.workspace.getConfiguration("pide").get<number>("agentLabTokenBudget", 12_000);
     for (const role of selected) {
       const run: AgentRunSnapshot = {
-        id: randomUUID(), roleId: role.id, roleName: role.name, status: "queued", progress: `Queued with ${budget} token budget`, toolEvents: [],
+        id: randomUUID(), roleId: role.id, roleName: role.name, status: "queued", progress: `Queued with ${budget} token budget`, toolEvents: [], audit: [`Queued ${new Date().toISOString()}`],
       };
       this.runs.set(run.id, { snapshot: run });
       this.queue.push({ run, role, task: task.trim().slice(0, 24_000) });
@@ -109,6 +126,81 @@ export class AgentLabController implements vscode.Disposable {
     const role = roles.find((item) => item.id === old.roleId);
     if (!role) return;
     await this.run([role.id], old.result ? `Retry this Agent Lab task. Previous result for context:\n\n${old.result}` : "Retry the previous Agent Lab task from the active PiDE context.");
+  }
+
+  async review(runId: string): Promise<void> {
+    const entry = this.runs.get(runId);
+    if (!entry?.worktree) return;
+    entry.snapshot.changes = await captureAgentChanges(entry.worktree);
+    entry.snapshot.audit.push(`Captured ${entry.snapshot.changes.length} changed files for review`);
+    this.publish();
+  }
+
+  async validate(runId: string, command: string): Promise<void> {
+    const entry = this.runs.get(runId);
+    if (!entry?.worktree) return;
+    const resolved = command.trim() || vscode.workspace.getConfiguration("pide").get<string>("agentLabValidationCommand", "npm test");
+    entry.snapshot.validation = await validateAgentWorktree(entry.worktree, resolved);
+    entry.snapshot.audit.push(`Validation ${entry.snapshot.validation.ok ? "passed" : "failed"}: ${resolved}`);
+    this.publish();
+  }
+
+  async applyAccepted(runId: string, paths: string[]): Promise<void> {
+    const entry = this.runs.get(runId);
+    if (!entry?.worktree) return;
+    const patch = await createAgentPatch(entry.worktree, paths);
+    await applyAgentPatch(entry.worktree.root, patch);
+    entry.snapshot.worktree!.lifecycle = "integrated";
+    entry.snapshot.audit.push(`Applied selected patch (${paths.length} files) to primary workspace`);
+    this.publish();
+  }
+
+  async merge(runId: string): Promise<void> {
+    const entry = this.runs.get(runId);
+    if (!entry?.worktree) return;
+    const choice = await vscode.window.showWarningMessage(
+      `Merge ${entry.worktree.branch} into the primary workspace? This creates a Git merge commit.`,
+      { modal: true }, "Merge Agent Branch",
+    );
+    if (choice !== "Merge Agent Branch") return;
+    if (await commitAgentWorktree(entry.worktree)) entry.snapshot.audit.push("Created reviewed agent-worktree commit for merge");
+    await mergeAgentBranch(entry.worktree);
+    entry.snapshot.worktree!.lifecycle = "integrated";
+    entry.snapshot.audit.push("Explicitly approved and merged agent branch");
+    this.publish();
+  }
+
+  async cleanupWorktree(runId: string): Promise<void> {
+    const entry = this.runs.get(runId);
+    if (!entry?.worktree) return;
+    await removeAgentWorktree(entry.worktree, entry.snapshot.worktree?.lifecycle === "integrated");
+    entry.snapshot.worktree!.lifecycle = "cleaned";
+    entry.snapshot.audit.push("Worktree cleaned up");
+    this.publish();
+  }
+
+  async provideWorktreeContent(runId: string, path: string, side: "before" | "after"): Promise<string> {
+    const worktree = this.runs.get(runId)?.worktree;
+    return worktree ? (side === "before" ? await agentBeforeContent(worktree, path) : await agentAfterContent(worktree, path)) : "";
+  }
+
+  async openDiff(runId: string, path: string): Promise<void> {
+    const entry = this.runs.get(runId);
+    if (!entry?.worktree || !entry.snapshot.changes?.some((file) => file.path === path)) return;
+    const revision = `${runId}-${Date.now()}`;
+    const base = { scheme: "pide-agent-change", path: `/${path}`, query: new URLSearchParams({ runId, path, revision }).toString() };
+    await vscode.commands.executeCommand("vscode.diff", vscode.Uri.from({ ...base, query: new URLSearchParams({ runId, path, revision, side: "before" }).toString() }), vscode.Uri.from({ ...base, query: new URLSearchParams({ runId, path, revision, side: "after" }).toString() }), `${path} — Agent worktree`, { preview: true });
+  }
+
+  async recoverAbandoned(): Promise<void> {
+    for (const entry of this.runs.values()) {
+      if (!entry.worktree || entry.snapshot.worktree?.lifecycle !== "active") continue;
+      entry.snapshot.worktree.lifecycle = "abandoned";
+      entry.snapshot.audit.push(await worktreeExists(entry.worktree.path)
+        ? "Recovered abandoned worktree after VS Code restart"
+        : "Worktree was missing on recovery");
+    }
+    this.publish();
   }
 
   async dispose(): Promise<void> {
@@ -150,14 +242,24 @@ export class AgentLabController implements vscode.Disposable {
     const startedAt = Date.now();
     item.run.status = "starting";
     item.run.startedAt = startedAt;
-    item.run.progress = "Starting isolated read-only Pi process…";
+    const writing = item.role.mode === "worktree";
+    item.run.progress = writing ? "Creating isolated Git worktree…" : "Starting isolated read-only Pi process…";
     this.publish();
 
     const folder = this.workspaceFolder();
     if (!folder || !vscode.workspace.isTrusted) return this.fail(item.run, "Agent Lab requires a trusted filesystem workspace.");
     const config = vscode.workspace.getConfiguration("pide", folder.uri);
-    const cwd = await mkdtemp(join(tmpdir(), "pide-agent-lab-"));
-    entry.cleanup = cwd;
+    let cwd: string;
+    if (writing) {
+      const worktree = await createAgentWorktree({ repository: folder.uri.fsPath, storageRoot: this.context.globalStorageUri.fsPath, id: item.run.id, role: item.role.name });
+      entry.worktree = worktree;
+      item.run.worktree = { root: worktree.root, path: worktree.path, branch: worktree.branch, baseCommit: worktree.baseCommit, baselineStatus: worktree.baselineStatus, lifecycle: worktree.lifecycle, createdAt: worktree.createdAt };
+      item.run.audit.push(`Created worktree ${worktree.branch} from ${worktree.baseCommit.slice(0, 10)}`);
+      cwd = worktree.path;
+    } else {
+      cwd = await mkdtemp(join(tmpdir(), "pide-agent-lab-"));
+      entry.cleanup = cwd;
+    }
     const runtime = new PiRuntime((line) => this.output.appendLine(`[Agent Lab:${item.role.name}] ${line}`));
     entry.runtime = runtime;
     let result = "";
@@ -173,11 +275,12 @@ export class AgentLabController implements vscode.Disposable {
         if (tool) {
           item.run.toolEvents.push({ tool, status: String(event.record.type ?? "tool") });
           item.run.toolEvents = item.run.toolEvents.slice(-40);
-          if (FORBIDDEN_TOOLS.has(tool)) {
+          const codingViolation = writing ? unsafeCodingTool(event.record, entry.worktree!) : undefined;
+          if ((!writing && FORBIDDEN_TOOLS.has(tool)) || codingViolation) {
             abortedForTool = true;
             item.run.status = "failed";
-            item.run.error = `Forbidden tool attempted: ${tool}`;
-            item.run.progress = "Aborting forbidden write-capable tool.";
+            item.run.error = codingViolation ?? `Forbidden tool attempted: ${tool}`;
+            item.run.progress = "Aborting unsafe tool request.";
             void runtime.stop();
           }
         }
@@ -197,12 +300,14 @@ export class AgentLabController implements vscode.Disposable {
       configuredExecutable: config.get<string>("executablePath", "pi").trim() || "pi",
       cwd,
       args: [...config.get<string[]>("extraArgs", []), "--extension", bridgePath],
-      approveWorkspace: false,
+      approveWorkspace: writing ? config.get<boolean>("approveTrustedWorkspace", true) : false,
     });
     if (!started) return this.fail(item.run, runtime.health?.message ?? "Could not start Pi.");
     item.run.progress = "Prompt sent";
     this.publish();
-    const prompt = agentPrompt(item.role, item.task, folder.uri.fsPath, config.get<number>("agentLabTokenBudget", 12_000));
+    const prompt = writing
+      ? codingAgentPrompt(item.role, item.task, entry.worktree!, config.get<number>("agentLabTokenBudget", 12_000))
+      : agentPrompt(item.role, item.task, folder.uri.fsPath, config.get<number>("agentLabTokenBudget", 12_000));
     try {
       await runtime.client?.request({ type: "prompt", message: prompt }, 60_000);
     } catch (error) {
@@ -219,7 +324,11 @@ export class AgentLabController implements vscode.Disposable {
     run.finishedAt = Date.now();
     run.durationMs = run.startedAt ? run.finishedAt - run.startedAt : undefined;
     await entry.runtime?.stop().catch(() => undefined);
-    await this.cleanup(entry);
+    if (entry.worktree) {
+      run.changes = await captureAgentChanges(entry.worktree);
+      run.worktree!.lifecycle = "complete";
+      run.audit.push(`Agent completed; captured ${run.changes.length} changed files`);
+    } else await this.cleanup(entry);
     this.publish();
   }
 
@@ -252,6 +361,7 @@ export class AgentLabController implements vscode.Disposable {
   }
 
   private publish(): void {
+    void this.context.workspaceState.update("pide.agentLabRuns", this.snapshots().filter((run) => Boolean(run.worktree)).slice(0, 40));
     void this.open();
   }
 }
@@ -266,6 +376,7 @@ function builtinRoles(): AgentRole[] {
     { ...base, id: "researcher", name: "Researcher", description: "Gathers bounded external or documentation context.", prompt: "Research only what is necessary. Cite compact findings and uncertainty." },
     { ...base, id: "security", name: "Security", description: "Looks for security, privacy, trust, and supply-chain risks.", prompt: "Focus on concrete abuse cases, secrets, auth boundaries, and mitigations." },
     { ...base, id: "documentation", name: "Documentation", description: "Improves explanations, docs structure, and user-facing clarity.", prompt: "Focus on concise documentation gaps and suggested wording." },
+    { id: "implementer", name: "Implementer", description: "Implements an approved task in an isolated Git worktree for review.", tools: ["read", "edit", "write"], invocation: "manual", source: "builtin", mode: "worktree", prompt: "Implement only the requested change. Work only inside your assigned worktree. Do not use shell tools; PiDE runs validation separately. Summarize changed files, tests to run, risks, and review notes." },
   ];
 }
 
@@ -306,6 +417,10 @@ function splitFrontmatter(raw: string): { frontmatter: Record<string, string>; b
   return { frontmatter: fm, body: raw.slice(end + 5) };
 }
 
+function codingAgentPrompt(role: AgentRole, task: string, worktree: AgentWorktree, budget: number): string {
+  return `You are a PiDE coding subagent named ${role.name}.\n\nWORKTREE SAFETY CONTRACT:\n- You may modify files only inside this assigned Git worktree: ${worktree.path}\n- Allowed tools are exactly: read, edit, write. Any other tool request is aborted.\n- Never access, modify, or run commands in the primary workspace: ${worktree.root}\n- Do not commit, merge, rebase, push, alter Git remotes, or delete the worktree.\n- Implement only the requested task. Keep scope narrow. PiDE runs validation separately.\n- Token budget: ${budget}. Stop early if the budget is at risk.\n\nRole instructions:\n${role.prompt}\n\nTask:\n${task}\n\nReturn a compact summary of changed files, validation to run, risks, and review notes. Your work will be reviewed before any integration.`;
+}
+
 function agentPrompt(role: AgentRole, task: string, workspacePath: string, budget: number): string {
   return `You are a PiDE Agent Lab subagent named ${role.name}.\n\nREAD-ONLY SAFETY CONTRACT:\n- Do not modify files, do not write files, do not run shell commands that mutate state, and do not use edit/write/bash.\n- Allowed tool intent: ${role.tools.join(", ")}.\n- Work from an isolated temporary process. Treat workspace path as read-only context: ${workspacePath}.\n- Keep the response bounded. Do not write noisy transcripts to Honcho memory.\n- Token budget: ${budget}. Stop early if the budget is at risk.\n\nRole instructions:\n${role.prompt}\n\nTask from parent PiDE session:\n${task}\n\nReturn: status, key findings, evidence/file references, risks, and recommended next steps. Do not apply changes.`;
 }
@@ -319,6 +434,19 @@ function extractTextDelta(record: RpcRecord): string {
 function toolName(record: RpcRecord): string | undefined {
   if (record.type !== "tool_execution_start") return undefined;
   return typeof record.toolName === "string" ? record.toolName : undefined;
+}
+
+function unsafeCodingTool(record: RpcRecord, worktree: AgentWorktree): string | undefined {
+  const tool = toolName(record);
+  if (!tool || !["read", "edit", "write"].includes(tool)) return `Forbidden coding-agent tool attempted: ${tool ?? "unknown"}`;
+  const args = record.args as Record<string, unknown> | undefined;
+  const path = typeof args?.path === "string" ? args.path : undefined;
+  if (!path) return `Coding-agent ${tool} request lacked a file path`;
+  const absolute = resolve(worktree.path, path);
+  const rel = relative(worktree.path, absolute);
+  return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+    ? `Coding-agent path escaped assigned worktree: ${path}`
+    : undefined;
 }
 
 function slug(value: string): string { return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "agent"; }

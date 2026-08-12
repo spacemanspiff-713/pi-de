@@ -170,7 +170,7 @@ The extension should eventually provide:
 
 ### Current release snapshot
 
-- Version: `0.6.0`
+- Version: `0.7.0`
 - Extension ID: `spacemanspiff-713.pide`
 - Feature baseline commit: `f165e3a`
 - Original implementation commit: `ebeceb3`
@@ -333,23 +333,23 @@ Goal: make the current implementation modular enough to support multiple runtime
 - [x] Parent-agent failures do not crash subagents and vice versa.
 - [x] Costs are visible and bounded through per-agent soft token budgets; exact child usage totals remain dependent on Pi RPC usage events.
 
-## Phase 4 — v0.7 safe coding agents
+## Phase 4 — v0.7 safe coding agents — completed in v0.7.0
 
-- [ ] Create a dedicated Git branch/worktree per writing agent.
-- [ ] Capture main-workspace state before launching an implementer.
-- [ ] Track worktree ownership and lifecycle.
-- [ ] Run writing agents only in their assigned worktree.
-- [ ] Capture a per-agent change set.
-- [ ] Run selected validation inside the agent worktree.
-- [ ] Present agent diffs in native VS Code review.
-- [ ] Accept or reject individual agent files.
-- [ ] Generate/apply a patch from selected changes.
-- [ ] Detect merge conflicts before integration.
-- [ ] Require explicit approval before merging.
-- [ ] Recover and clean up abandoned worktrees after crashes.
-- [ ] Support Architect → Implementer → Tester → Reviewer workflows.
-- [ ] Compare competing implementations.
-- [ ] Preserve a complete audit trail of agent actions and outcomes.
+- [x] Create a dedicated Git branch/worktree per writing agent.
+- [x] Capture main-workspace state before launching an implementer.
+- [x] Track worktree ownership and lifecycle in persisted Agent Lab records.
+- [x] Run writing agents only in their assigned worktree.
+- [x] Capture a per-agent change set, including newly created files.
+- [x] Run configured validation inside the agent worktree.
+- [x] Present agent diffs in native VS Code review.
+- [x] Accept or reject individual agent files by selecting exact patch paths to apply.
+- [x] Generate/apply a patch from selected changes.
+- [x] Detect merge conflicts before integration.
+- [x] Require explicit modal approval before merging.
+- [x] Recover abandoned worktree records after crashes/reloads and allow cleanup.
+- [x] Support Architect → Implementer → Tester → Reviewer workflows through independently selectable role runs and worktree review/validation.
+- [x] Compare competing implementations through separate retained worktree review cards.
+- [x] Preserve a persisted audit trail of agent worktree actions and outcomes.
 
 ## Phase 5 — advanced studio backlog
 

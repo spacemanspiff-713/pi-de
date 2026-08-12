@@ -8,7 +8,7 @@ PiDE gives Pi a first-class home in the editor: streaming conversations, native 
 
 > **Vibe coded with Pi, for Pi.** Every commit in this repo was produced by a Pi coding agent working inside its own PiDE interface. The primary model was `openai-codex/gpt-5.5` with thinking on medium, assisted by `openrouter/deepseek/deepseek-v4-pro` & local `gemma-4-26b-a4b` for faster iteration. Also used `openai-codex/gpt-5.6 Terra ` for architecture review and planning. Pi literally built its own home.
 
-> **Project status:** Early open-source release. v0.6.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+> **Project status:** Early open-source release. v0.7.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## 🙏 Shoutout
 
@@ -122,7 +122,7 @@ Pi extension requests are bridged into VS Code for:
 
 ### Agent Lab
 
-PiDE v0.6 includes a read-only Agent Lab MVP. It discovers built-in, user, and project agent roles, then runs selected subagents in isolated Pi sidecar processes with bounded parallelism, soft token budgets, progress/tool-event streaming, stop/retry controls, and bounded result rendering. The MVP forbids write-capable tools (`edit`, `write`, unrestricted `bash`) and aborts if a child attempts one; worktree-isolated writing agents are planned for Phase 4.
+PiDE v0.7 includes Agent Lab. Read-only research roles run in isolated temporary Pi sidecars. The `Implementer` is the sole coding role: it receives a dedicated Git branch/worktree, can use only `read`, `edit`, and `write` against paths inside that worktree, and returns a retained change set for review. PiDE can run configured validation in the worktree, open native VS Code diffs, apply only selected file patches, or—after a modal confirmation and merge-conflict preflight—merge the agent branch. The primary workspace is never given to a coding agent.
 
 ## Requirements
 
@@ -150,7 +150,7 @@ For Remote SSH, WSL, or development containers, install and configure Pi in that
 - PiDE can keep multiple session tabs open with lazily-started Pi RPC sidecars. Idle background runtimes may be suspended when `pide.maxActiveRuntimes` is exceeded.
 - Native checkpoint review requires a Git worktree. Chat and sessions still work outside Git repositories.
 - The MCP control center expects `pi-mcp-adapter` to be configured through Pi.
-- Agent Lab subagents are read-only MVP workers: they run in isolated Pi processes with soft budgets and forbidden-tool tripwires. Writing/coding subagents remain deferred to the worktree-isolated Phase 4 design.
+- Agent Lab research roles are read-only. The `Implementer` is write-capable only in a dedicated Git worktree; integrations require explicit review and approval.
 - The extension is currently distributed as a locally built VSIX rather than through the Marketplace.
 
 ## Installation
@@ -162,7 +162,7 @@ git clone https://github.com/spacemanspiff-713/pi-de.git
 cd pi-de
 npm install
 npm run package
-code --install-extension pide-0.6.0.vsix --force
+code --install-extension pide-0.7.0.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.
@@ -217,6 +217,7 @@ The header provides shortcuts for:
 | `pide.maxActiveRuntimes` | `3` | Maximum active Pi sidecars before idle session tabs are suspended |
 | `pide.agentLabMaxConcurrent` | `4` | Maximum read-only Agent Lab subagents that can run concurrently |
 | `pide.agentLabTokenBudget` | `12000` | Soft per-subagent token budget included in the safety prompt |
+| `pide.agentLabValidationCommand` | `npm test` | Validation command run only in coding-agent worktrees |
 
 Your models, providers, API credentials, Pi extensions, skills, prompt templates, sessions, and MCP configuration remain in Pi's normal configuration directories.
 
@@ -337,7 +338,7 @@ Near-term work includes:
 2. Package, extension, skill, prompt, and agent resource management
 3. A bounded read-only VS Code diagnostics/symbol bridge
 4. Persistent multi-session tabs and background sessions
-5. Read-only Agent Lab subagents
+5. Read-only research agents and Git-worktree-isolated coding agents
 6. Git-worktree-isolated coding agents with native diff review
 
 The detailed checklist is maintained in [GAMEPLAN.md](GAMEPLAN.md). Third-party design references and dependency notices are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

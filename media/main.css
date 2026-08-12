@@ -282,6 +282,14 @@ button { color: inherit; }
 .agent-error { color: var(--vscode-errorForeground); margin-top: 6px; }
 .agent-actions { display: flex; gap: 6px; margin-top: 8px; }
 .agent-actions button { font-size: 11px; }
+.agent-worktree { margin-top: 8px; border: 1px solid var(--vscode-editorWidget-border); border-radius: 5px; padding: 6px; }
+.agent-worktree summary { cursor: pointer; font-weight: 600; }
+.agent-files { display: grid; gap: 5px; margin-top: 7px; }
+.agent-files label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 5px; align-items: center; font-size: 11px; }
+.agent-files code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-validation { margin-top: 7px; padding: 5px; border-radius: 4px; white-space: pre-wrap; font-size: 11px; }
+.agent-validation.ok { color: var(--vscode-testing-iconPassed); background: color-mix(in srgb, var(--vscode-testing-iconPassed) 10%, transparent); }
+.agent-validation.fail { color: var(--vscode-testing-iconFailed); background: color-mix(in srgb, var(--vscode-testing-iconFailed) 10%, transparent); }
 .panel-toolbar button, .row-actions button {
   border: 1px solid var(--border);
   border-radius: 5px;
