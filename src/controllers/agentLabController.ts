@@ -28,6 +28,7 @@ export interface AgentRunSnapshot {
   id: string;
   roleId: string;
   roleName: string;
+  task?: string;
   status: "queued" | "starting" | "running" | "succeeded" | "failed" | "cancelled";
   progress: string;
   result?: string;
@@ -105,7 +106,7 @@ export class AgentLabController implements vscode.Disposable {
       const maxToolCalls = role.maxToolCalls ?? vscode.workspace.getConfiguration("pide").get<number>("agentLabMaxToolCalls", 24);
       const maxDurationMs = role.maxDurationMs ?? vscode.workspace.getConfiguration("pide").get<number>("agentLabMaxDurationMinutes", 5) * 60_000;
       const run: AgentRunSnapshot = {
-        id: randomUUID(), roleId: role.id, roleName: role.name, status: "queued", progress: `Queued with ${budget} token budget`, toolEvents: [], toolCounts: {}, toolCallCount: 0, maxToolCalls, maxDurationMs, model: role.model, audit: [`Queued ${new Date().toISOString()}`],
+        id: randomUUID(), roleId: role.id, roleName: role.name, task: task.trim().slice(0, 24_000), status: "queued", progress: `Queued with ${budget} token budget`, toolEvents: [], toolCounts: {}, toolCallCount: 0, maxToolCalls, maxDurationMs, model: role.model, audit: [`Queued ${new Date().toISOString()}`],
       };
       this.runs.set(run.id, { snapshot: run });
       this.queue.push({ run, role, task: task.trim().slice(0, 24_000) });

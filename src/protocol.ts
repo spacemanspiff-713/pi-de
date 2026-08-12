@@ -144,6 +144,7 @@ export type HostToWebviewMessage =
   | { type: "sessionStats"; stats: SessionStats }
   | { type: "sessionTabs"; tabs: SessionTabState[] }
   | { type: "agentLab"; roles: AgentRole[]; runs: AgentRunSnapshot[]; maxConcurrent: number }
+  | { type: "showAgentLab" }
   | { type: "clear" }
   | { type: "userPrompt"; text: string }
   | { type: "textDelta"; delta: string }

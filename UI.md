@@ -1,6 +1,6 @@
 # Phase 5B — Chat Window UI/UX Improvements Discovery
 
-Status: research and product design only. Do not implement from this file without a separate build phase.
+Status: discovery complete; implementation slices 5B.1 and 5B.2 shipped in v0.9.0. Later slices remain design only.
 
 ## Goal
 
@@ -149,9 +149,11 @@ Replace the current single-stack mental model with board regions:
 
 Narrow sidebar mode:
 
-- collapse to stacked tabs: Chat / Swarm / Artifacts / System;
+- use Chat / Swarm as true board tabs;
+- route Changes and MCP navigation to their existing stable overlays until dedicated Artifacts/System views are built;
 - keep composer fixed at bottom;
-- show only active/alerted agents in the swarm strip.
+- auto-hide the swarm strip when there are no active/alerted runs, because permanent empty chrome wastes scarce sidebar height;
+- background telemetry must update the board without stealing focus or forcing Swarm open.
 
 Wide/editor-panel future mode:
 
@@ -399,18 +401,19 @@ src/controllers/
 
 ## Build phases proposal
 
-### 5B.1 — Board skeleton and navigation
+### 5B.1 — Board skeleton and navigation — shipped in v0.9.0
 
-- Add visible Chat / Swarm / Artifacts / System tabs.
-- Add persistent swarm strip.
-- Keep existing drawers working.
-- No behavior changes yet.
+- Added visible Chat / Swarm board tabs plus Changes/MCP routes to existing overlays.
+- Added persistent-state, auto-hiding swarm strip.
+- Kept existing Changes/MCP drawers working.
+- Prevented telemetry updates from stealing focus.
 
-### 5B.2 — Agent run card redesign
+### 5B.2 — Agent run card redesign — shipped in v0.9.0
 
-- Normalize run card sections.
-- Show source/failure/tool/audit tabs inside each run.
-- Improve worktree review cards.
+- Normalized task, status, elapsed time, model, tools/cap, last tool, source count, progress, failure, result, and actions.
+- Added clear attention state for completed worktrees needing review.
+- Preserved role selections across telemetry refreshes.
+- Kept existing worktree diff/validation/patch/merge controls.
 
 ### 5B.3 — Artifact inspector
 
@@ -435,9 +438,9 @@ src/controllers/
 - Reduced motion.
 - Screen-reader labels and live regions.
 
-## Suggested first implementation slice
+## First implementation slice result
 
-Start with **5B.1 + 5B.2 only**.
+**5B.1 + 5B.2 shipped in v0.9.0.**
 
 Why:
 

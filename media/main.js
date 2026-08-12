@@ -20996,6 +20996,9 @@
     const prompt = document.getElementById("prompt");
     const banner = document.getElementById("banner");
     const statusDot = document.getElementById("status-dot");
+    const boardNav = document.getElementById("board-nav");
+    const chatBoard = document.getElementById("chat-board");
+    const swarmStrip = document.getElementById("swarm-strip");
     const sessionTabs = document.getElementById("session-tabs");
     const modelButton = document.getElementById("model");
     const thinkingButton = document.getElementById("thinking");
@@ -21050,6 +21053,9 @@
     document.getElementById("sessions").addEventListener("click", () => vscode.postMessage({ type: "openSession" }));
     document.getElementById("resources").addEventListener("click", () => vscode.postMessage({ type: "openResources" }));
     document.getElementById("agent-lab").addEventListener("click", () => vscode.postMessage({ type: "openAgentLab" }));
+    boardNav.querySelectorAll("[data-board]").forEach((button) => button.addEventListener("click", () => switchBoard(button.dataset.board || "chat")));
+    boardNav.querySelector("[data-board-action=changes]")?.addEventListener("click", () => latestChangeSet?.files?.length ? showPanel(changesPanel) : vscode.postMessage({ type: "reviewChanges" }));
+    boardNav.querySelector("[data-board-action=mcp]")?.addEventListener("click", () => showPanel(mcpPanel));
     compactButton.addEventListener("click", () => vscode.postMessage({ type: "compactSession" }));
     reloadSessionButton.addEventListener("click", () => vscode.postMessage({ type: "reloadSession" }));
     document.getElementById("new").addEventListener("click", () => vscode.postMessage({ type: "newSession" }));
@@ -21168,7 +21174,9 @@
           break;
         case "agentLab":
           renderAgentLab(data.roles || [], data.runs || [], data.maxConcurrent || 4);
-          showPanel(agentLabPanel);
+          break;
+        case "showAgentLab":
+          switchBoard("swarm");
           break;
         case "clear":
           transcript.textContent = "";
@@ -21281,10 +21289,25 @@
       const roleIds = Array.from(agentLabRoles.querySelectorAll("input[type=checkbox]:checked")).map((input) => input.value);
       vscode.postMessage({ type: "runAgentLab", roleIds, task: agentLabTask.value });
     }
+    function switchBoard(board) {
+      const swarm = board === "swarm";
+      chatBoard.classList.toggle("hidden", swarm);
+      agentLabPanel.classList.toggle("hidden", !swarm);
+      boardNav.querySelectorAll("[data-board]").forEach((button) => {
+        const active = button.dataset.board === board;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      if (swarm && !latestAgentRoles.length) vscode.postMessage({ type: "openAgentLab" });
+    }
     function renderAgentLab(roles, runs, maxConcurrent) {
+      const selected = new Set(Array.from(agentLabRoles.querySelectorAll("input[type=checkbox]:checked")).map((input) => input.value));
+      const hadRoster = latestAgentRoles.length > 0;
       latestAgentRoles = roles;
       latestAgentRuns = runs;
-      agentLabSummary.textContent = `${roles.length} roles \xB7 ${runs.filter((run) => ["queued", "starting", "running"].includes(run.status)).length}/${maxConcurrent} active or queued \xB7 read-only research + worktree coding`;
+      const active = runs.filter((run) => ["queued", "starting", "running"].includes(run.status));
+      const attention = runs.filter((run) => run.status === "failed" || run.worktree && run.worktree.lifecycle === "complete");
+      agentLabSummary.textContent = `${roles.length} roles \xB7 ${active.length}/${maxConcurrent} active or queued \xB7 ${attention.length} need attention`;
       agentLabRoles.textContent = "";
       for (const role of roles) {
         const label = document.createElement("label");
@@ -21292,9 +21315,9 @@
         const input = document.createElement("input");
         input.type = "checkbox";
         input.value = role.id;
-        input.checked = ["architect", "explorer", "reviewer"].includes(role.id);
+        input.checked = hadRoster ? selected.has(role.id) : ["architect", "explorer", "reviewer"].includes(role.id);
         const body = document.createElement("span");
-        body.innerHTML = `<strong>${escapeHtml2(role.name)}</strong><small>${escapeHtml2(role.source)} \xB7 ${escapeHtml2(role.description || "")}</small><small>model: ${escapeHtml2(role.model || "default")} \xB7 tools: ${escapeHtml2((role.tools || []).join(", "))} \xB7 cap: ${escapeHtml2(String(role.maxToolCalls || "default"))}</small>`;
+        body.innerHTML = `<strong>${escapeHtml2(role.name)}</strong><small>${escapeHtml2(role.description || "")}</small><small>${escapeHtml2(role.model || "default model")} \xB7 ${(role.tools || []).length} tools \xB7 cap ${escapeHtml2(String(role.maxToolCalls || "default"))}</small>`;
         const edit = document.createElement("button");
         edit.type = "button";
         edit.textContent = "Edit";
@@ -21312,37 +21335,78 @@
         label.append(input, body, edit, reset);
         agentLabRoles.append(label);
       }
+      renderSwarmStrip(runs);
       agentLabRuns.textContent = "";
-      for (const run of runs) {
-        const item = document.createElement("article");
-        item.className = `agent-run ${run.status}`;
-        const resultHtml = run.result ? purify.sanitize(markdown.render(run.result)) : "";
-        item.innerHTML = `<header><strong>${escapeHtml2(run.roleName)}</strong><span>${escapeHtml2(run.status)}</span></header>
-        <div class="agent-progress">${escapeHtml2(run.progress || "")}${run.durationMs ? ` \xB7 ${Math.round(run.durationMs / 1e3)}s` : ""}</div>
-        <div class="agent-tools">model: ${escapeHtml2(run.model || "default")} \xB7 tools: ${escapeHtml2(String(run.toolCallCount || 0))}/${escapeHtml2(String(run.maxToolCalls || "\u2014"))} \xB7 last: ${escapeHtml2(run.lastTool || "none")}</div>
-        ${run.error ? `<div class="agent-error">${escapeHtml2(run.error)}</div>` : ""}
-        ${run.toolEvents?.length ? `<details class="agent-tool-breakdown"><summary>Tool breakdown</summary><div>${Object.entries(run.toolCounts || {}).map(([tool, count]) => `${escapeHtml2(tool)}: ${escapeHtml2(String(count))}`).join(" \xB7 ")}</div><div>${run.toolEvents.slice(-12).map((tool) => escapeHtml2(tool.tool)).join(" \xB7 ")}</div></details>` : ""}
-        ${resultHtml ? `<details ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
-        ${run.worktree ? `<details class="agent-worktree" open><summary>Worktree review \xB7 ${escapeHtml2(run.worktree.lifecycle)} \xB7 ${escapeHtml2(run.worktree.branch)}</summary>
-          <div class="agent-tools">${escapeHtml2(run.worktree.path)}</div>
-          ${run.validation ? `<div class="agent-validation ${run.validation.ok ? "ok" : "fail"}">Validation: ${run.validation.ok ? "passed" : "failed"} \u2014 ${escapeHtml2(run.validation.output.slice(-500))}</div>` : ""}
-          <div class="agent-files">${(run.changes || []).map((file) => `<label><input type="checkbox" data-agent-file="${escapeHtml2(file.path)}" checked> <code>${escapeHtml2(file.status)} ${escapeHtml2(file.path)}</code> <button data-agent-diff="${escapeHtml2(file.path)}">Diff</button></label>`).join("") || "No changes captured."}</div>
-          <div class="agent-actions"><button data-agent-review>Refresh changes</button><button data-agent-validate>Validate</button><button data-agent-apply>Apply selected patch</button><button data-agent-merge>Merge branch\u2026</button><button data-agent-cleanup>Clean up</button></div>
-        </details>` : ""}
-        <div class="agent-actions"><button data-agent-stop="${escapeHtml2(run.id)}">Stop</button><button data-agent-retry="${escapeHtml2(run.id)}">Retry</button></div>`;
-        item.querySelector("[data-agent-stop]")?.addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab", runId: run.id }));
-        item.querySelector("[data-agent-retry]")?.addEventListener("click", () => vscode.postMessage({ type: "retryAgentLab", runId: run.id }));
-        item.querySelector("[data-agent-review]")?.addEventListener("click", () => vscode.postMessage({ type: "reviewAgentWorktree", runId: run.id }));
-        item.querySelector("[data-agent-validate]")?.addEventListener("click", () => vscode.postMessage({ type: "validateAgentWorktree", runId: run.id, command: "" }));
-        item.querySelector("[data-agent-apply]")?.addEventListener("click", () => {
-          const paths = Array.from(item.querySelectorAll("[data-agent-file]:checked")).map((input) => input.dataset.agentFile || "");
-          vscode.postMessage({ type: "applyAgentPatch", runId: run.id, paths });
-        });
-        item.querySelector("[data-agent-merge]")?.addEventListener("click", () => vscode.postMessage({ type: "mergeAgentWorktree", runId: run.id }));
-        item.querySelector("[data-agent-cleanup]")?.addEventListener("click", () => vscode.postMessage({ type: "cleanupAgentWorktree", runId: run.id }));
-        item.querySelectorAll("[data-agent-diff]").forEach((button) => button.addEventListener("click", () => vscode.postMessage({ type: "openAgentDiff", runId: run.id, path: button.dataset.agentDiff || "" })));
-        agentLabRuns.append(item);
+      if (!runs.length) {
+        const empty = document.createElement("div");
+        empty.className = "swarm-empty";
+        empty.innerHTML = `<strong>No agent runs yet</strong><span>Select roles, describe one bounded task, and run the swarm.</span>`;
+        agentLabRuns.append(empty);
+        return;
       }
+      for (const run of runs) renderAgentRunCard(run);
+    }
+    function renderSwarmStrip(runs) {
+      const visible = runs.filter((item) => ["queued", "starting", "running", "failed"].includes(item.status) || item.worktree && item.worktree.lifecycle === "complete").slice(0, 8);
+      swarmStrip.textContent = "";
+      swarmStrip.classList.toggle("hidden", !visible.length);
+      for (const run of visible) {
+        const chip = document.createElement("button");
+        const state = displayRunStatus(run);
+        chip.className = `swarm-chip ${state.className}`;
+        chip.innerHTML = `<strong>${escapeHtml2(run.roleName)}</strong><span>${escapeHtml2(state.label)} \xB7 ${escapeHtml2(String(run.toolCallCount || 0))}/${escapeHtml2(String(run.maxToolCalls || "\u2014"))}</span>`;
+        chip.addEventListener("click", () => {
+          switchBoard("swarm");
+          document.querySelector(`[data-agent-run-id="${CSS.escape(run.id)}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+        });
+        swarmStrip.append(chip);
+      }
+    }
+    function renderAgentRunCard(run) {
+      const item = document.createElement("article");
+      const state = displayRunStatus(run);
+      item.dataset.agentRunId = run.id;
+      item.tabIndex = 0;
+      item.className = `agent-run ${state.className}`;
+      const resultHtml = run.result ? purify.sanitize(markdown.render(run.result)) : "";
+      const sourceCount = new Set((run.result || "").match(/https?:\/\/[^\s)\]}>]+/g) || []).size;
+      const elapsed = run.durationMs ? `${Math.round(run.durationMs / 1e3)}s` : run.startedAt ? `${Math.max(0, Math.round((Date.now() - run.startedAt) / 1e3))}s` : "\u2014";
+      item.innerHTML = `<header class="agent-run-header"><div><strong>${escapeHtml2(run.roleName)}</strong><span class="agent-status ${state.className}">${escapeHtml2(state.label)}</span></div><span>${escapeHtml2(elapsed)}</span></header>
+      <div class="agent-task">${escapeHtml2(run.task || "Task details unavailable for this older run.")}</div>
+      <div class="agent-metrics"><span title="Model">${escapeHtml2(shortModel(run.model))}</span><span title="Tool calls">${escapeHtml2(String(run.toolCallCount || 0))}/${escapeHtml2(String(run.maxToolCalls || "\u2014"))} tools</span><span title="Last tool">${escapeHtml2(run.lastTool || "no tool yet")}</span>${sourceCount ? `<span>${sourceCount} sources</span>` : ""}</div>
+      <div class="agent-progress">${escapeHtml2(run.progress || "Waiting")}</div>
+      ${run.error ? `<div class="agent-error">${escapeHtml2(run.error)}</div>` : ""}
+      ${run.toolEvents?.length ? `<details class="agent-tool-breakdown"><summary>Tool trace</summary><div>${Object.entries(run.toolCounts || {}).map(([tool, count]) => `${escapeHtml2(tool)}: ${escapeHtml2(String(count))}`).join(" \xB7 ")}</div><div>${run.toolEvents.slice(-12).map((tool) => escapeHtml2(tool.tool)).join(" \u2192 ")}</div></details>` : ""}
+      ${resultHtml ? `<details class="agent-result" ${run.status === "succeeded" ? "open" : ""}><summary>Result</summary><div class="markdown">${resultHtml}</div></details>` : ""}
+      ${run.worktree ? `<details class="agent-worktree" open><summary>Worktree \xB7 ${escapeHtml2(run.worktree.lifecycle)} \xB7 ${escapeHtml2(run.worktree.branch)}</summary>
+        <div class="agent-tools">${escapeHtml2(run.worktree.path)}</div>
+        ${run.validation ? `<div class="agent-validation ${run.validation.ok ? "ok" : "fail"}">Validation: ${run.validation.ok ? "passed" : "failed"} \u2014 ${escapeHtml2(run.validation.output.slice(-500))}</div>` : ""}
+        <div class="agent-files">${(run.changes || []).map((file) => `<label><input type="checkbox" data-agent-file="${escapeHtml2(file.path)}" checked> <code>${escapeHtml2(file.status)} ${escapeHtml2(file.path)}</code> <button data-agent-diff="${escapeHtml2(file.path)}">Diff</button></label>`).join("") || "No changes captured."}</div>
+        <div class="agent-actions"><button data-agent-review>Refresh changes</button><button data-agent-validate>Validate</button><button data-agent-apply>Apply selected</button><button data-agent-merge>Merge\u2026</button><button data-agent-cleanup>Clean up</button></div>
+      </details>` : ""}
+      <div class="agent-actions"><button data-agent-stop="${escapeHtml2(run.id)}" ${["succeeded", "failed", "cancelled"].includes(run.status) ? "disabled" : ""}>Stop</button><button data-agent-retry="${escapeHtml2(run.id)}">Retry</button></div>`;
+      item.querySelector("[data-agent-stop]")?.addEventListener("click", () => vscode.postMessage({ type: "stopAgentLab", runId: run.id }));
+      item.querySelector("[data-agent-retry]")?.addEventListener("click", () => vscode.postMessage({ type: "retryAgentLab", runId: run.id }));
+      item.querySelector("[data-agent-review]")?.addEventListener("click", () => vscode.postMessage({ type: "reviewAgentWorktree", runId: run.id }));
+      item.querySelector("[data-agent-validate]")?.addEventListener("click", () => vscode.postMessage({ type: "validateAgentWorktree", runId: run.id, command: "" }));
+      item.querySelector("[data-agent-apply]")?.addEventListener("click", () => {
+        const paths = Array.from(item.querySelectorAll("[data-agent-file]:checked")).map((input) => input.dataset.agentFile || "");
+        vscode.postMessage({ type: "applyAgentPatch", runId: run.id, paths });
+      });
+      item.querySelector("[data-agent-merge]")?.addEventListener("click", () => vscode.postMessage({ type: "mergeAgentWorktree", runId: run.id }));
+      item.querySelector("[data-agent-cleanup]")?.addEventListener("click", () => vscode.postMessage({ type: "cleanupAgentWorktree", runId: run.id }));
+      item.querySelectorAll("[data-agent-diff]").forEach((button) => button.addEventListener("click", () => vscode.postMessage({ type: "openAgentDiff", runId: run.id, path: button.dataset.agentDiff || "" })));
+      agentLabRuns.append(item);
+    }
+    function displayRunStatus(run) {
+      if (run.worktree?.lifecycle === "complete") return { label: "Needs review", className: "attention" };
+      if (run.validation && !run.validation.ok) return { label: "Validation failed", className: "failed" };
+      return { label: run.status, className: run.status };
+    }
+    function shortModel(model) {
+      if (!model) return "default model";
+      const parts = model.split("/");
+      return parts.slice(-2).join("/");
     }
     function renderSessionTabs(tabs) {
       sessionTabs.textContent = "";
