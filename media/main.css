@@ -270,6 +270,18 @@ button { color: inherit; }
 .control-panel > header button:hover { background: var(--vscode-toolbar-hoverBackground); }
 .panel-summary { padding: 8px var(--pad); color: var(--vscode-descriptionForeground); font-size: 11px; border-bottom: 1px solid var(--border); }
 .panel-toolbar { display: flex; gap: 5px; padding: 7px var(--pad); border-bottom: 1px solid var(--border); }
+#agent-lab-task { margin: 8px var(--pad); width: calc(100% - var(--pad) * 2); box-sizing: border-box; resize: vertical; }
+.agent-role { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 7px var(--pad); border-bottom: 1px solid var(--border); }
+.agent-role small { display: block; color: var(--vscode-descriptionForeground); margin-top: 2px; }
+.agent-run { padding: 9px var(--pad); border-bottom: 1px solid var(--border); }
+.agent-run > header { display: flex; justify-content: space-between; gap: 10px; }
+.agent-run.running > header span, .agent-run.starting > header span { color: var(--vscode-testing-iconQueued); }
+.agent-run.succeeded > header span { color: var(--vscode-testing-iconPassed); }
+.agent-run.failed > header span { color: var(--vscode-testing-iconFailed); }
+.agent-progress, .agent-tools { color: var(--vscode-descriptionForeground); font-size: 11px; margin-top: 4px; }
+.agent-error { color: var(--vscode-errorForeground); margin-top: 6px; }
+.agent-actions { display: flex; gap: 6px; margin-top: 8px; }
+.agent-actions button { font-size: 11px; }
 .panel-toolbar button, .row-actions button {
   border: 1px solid var(--border);
   border-radius: 5px;

@@ -2,7 +2,7 @@
   "name": "pide",
   "displayName": "PiDE",
   "description": "Pi Development Environment: a dedicated VS Code interface for the Pi coding agent.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "pidaddylabs",
   "private": true,
   "license": "MIT",
@@ -90,6 +90,12 @@
         "icon": "$(settings-gear)"
       },
       {
+        "command": "pide.openAgentLab",
+        "category": "PiDE",
+        "title": "Open Agent Lab",
+        "icon": "$(beaker)"
+      },
+      {
         "command": "pide.reviewChanges",
         "category": "PiDE",
         "title": "Review Changes",
@@ -131,13 +137,18 @@
           "when": "view == pide.chatView"
         },
         {
-          "command": "pide.reviewChanges",
+          "command": "pide.openAgentLab",
           "group": "navigation@4",
           "when": "view == pide.chatView"
         },
         {
-          "command": "pide.restart",
+          "command": "pide.reviewChanges",
           "group": "navigation@5",
+          "when": "view == pide.chatView"
+        },
+        {
+          "command": "pide.restart",
+          "group": "navigation@6",
           "when": "view == pide.chatView"
         }
       ],
@@ -186,6 +197,20 @@
           "minimum": 1,
           "maximum": 8,
           "description": "Maximum number of PiDE sidecar runtimes kept active before idle background tabs are suspended."
+        },
+        "pide.agentLabMaxConcurrent": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Maximum read-only Agent Lab subagents that can run concurrently."
+        },
+        "pide.agentLabTokenBudget": {
+          "type": "number",
+          "default": 12000,
+          "minimum": 1000,
+          "maximum": 200000,
+          "description": "Per-subagent soft token budget included in the Agent Lab safety prompt."
         }
       }
     }

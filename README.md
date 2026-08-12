@@ -6,7 +6,7 @@ A dedicated, independent VS Code development environment powered by the real [Pi
 
 PiDE gives Pi a first-class home in the editor: streaming conversations, native change review, searchable sessions, rich context attachments, and MCP controls—without replacing Pi's runtime or creating a separate configuration silo.
 
-> **Project status:** Early open-source release. v0.5.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
+> **Project status:** Early open-source release. v0.6.0 is usable today, but interfaces and configuration may change while the project moves toward a stable release.
 
 ## Why this project exists
 
@@ -109,6 +109,10 @@ Pi extension requests are bridged into VS Code for:
 - editor input;
 - external links.
 
+### Agent Lab
+
+PiDE v0.6 includes a read-only Agent Lab MVP. It discovers built-in, user, and project agent roles, then runs selected subagents in isolated Pi sidecar processes with bounded parallelism, soft token budgets, progress/tool-event streaming, stop/retry controls, and bounded result rendering. The MVP forbids write-capable tools (`edit`, `write`, unrestricted `bash`) and aborts if a child attempts one; worktree-isolated writing agents are planned for Phase 4.
+
 ## Requirements
 
 - VS Code 1.100 or newer
@@ -135,7 +139,7 @@ For Remote SSH, WSL, or development containers, install and configure Pi in that
 - PiDE can keep multiple session tabs open with lazily-started Pi RPC sidecars. Idle background runtimes may be suspended when `pide.maxActiveRuntimes` is exceeded.
 - Native checkpoint review requires a Git worktree. Chat and sessions still work outside Git repositories.
 - The MCP control center expects `pi-mcp-adapter` to be configured through Pi.
-- Inline extension-input widgets, the read-only VS Code bridge, and the subagent system described in the roadmap are not implemented yet.
+- Agent Lab subagents are read-only MVP workers: they run in isolated Pi processes with soft budgets and forbidden-tool tripwires. Writing/coding subagents remain deferred to the worktree-isolated Phase 4 design.
 - The extension is currently distributed as a locally built VSIX rather than through the Marketplace.
 
 ## Installation
@@ -147,7 +151,7 @@ git clone https://github.com/spacemanspiff-713/pi-de.git
 cd pi-de
 npm install
 npm run package
-code --install-extension pide-0.5.0.vsix --force
+code --install-extension pide-0.6.0.vsix --force
 ```
 
 Then run **Developer: Reload Window** in VS Code.
@@ -200,6 +204,8 @@ The header provides shortcuts for:
 | `pide.showThinking` | `true` | Display streamed reasoning in collapsible blocks |
 | `pide.gitCheckpoints` | `true` | Capture a non-destructive pre-task Git checkpoint for review/revert |
 | `pide.maxActiveRuntimes` | `3` | Maximum active Pi sidecars before idle session tabs are suspended |
+| `pide.agentLabMaxConcurrent` | `4` | Maximum read-only Agent Lab subagents that can run concurrently |
+| `pide.agentLabTokenBudget` | `12000` | Soft per-subagent token budget included in the safety prompt |
 
 Your models, providers, API credentials, Pi extensions, skills, prompt templates, sessions, and MCP configuration remain in Pi's normal configuration directories.
 

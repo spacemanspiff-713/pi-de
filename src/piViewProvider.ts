@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { basename } from "node:path";
 import * as vscode from "vscode";
+import { AgentLabController } from "./controllers/agentLabController";
 import { ChangeReviewController } from "./controllers/changeReviewController";
 import { ExtensionUiBridge } from "./controllers/extensionUiBridge";
 import { McpController } from "./controllers/mcpController";
@@ -39,6 +40,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   private fileContextCache?: { expiresAt: number; items: ContextCompletion[] };
   private availableCommands: PiCommandInfo[] = [];
   private readonly runtimeManager: PiRuntimeManager;
+  private readonly agentLab: AgentLabController;
   private readonly changeReview: ChangeReviewController;
   private readonly sessions: SessionController;
   private readonly mcp: McpController;
@@ -61,6 +63,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
       context.workspaceState.get<Array<{ id: string; sessionFile?: string; title: string; lastActive: number }>>("pide.runtimeTabs", []),
       context.workspaceState.get<string>("pide.activeRuntimeTab"),
     );
+    this.agentLab = new AgentLabController(context, output, folder, post);
     this.changeReview = new ChangeReviewController(context, output, folder);
     this.sessions = new SessionController({
       context,
@@ -120,6 +123,11 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     await this.resources.open();
   }
 
+  async openAgentLab(): Promise<void> {
+    await this.reveal();
+    await this.agentLab.open();
+  }
+
   async reviewChanges(): Promise<void> {
     await this.reveal();
     const changeSet = this.changeReview.changeSet;
@@ -157,6 +165,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
   async dispose(): Promise<void> {
     this.disposed = true;
     this.unsubscribeRuntime();
+    await this.agentLab.dispose();
     await this.stopClient();
   }
 
@@ -377,6 +386,21 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
         break;
       case "openResources":
         await this.resources.open();
+        break;
+      case "openAgentLab":
+        await this.agentLab.open();
+        break;
+      case "refreshAgentLab":
+        await this.agentLab.refresh();
+        break;
+      case "runAgentLab":
+        await this.agentLab.run(message.roleIds, message.task);
+        break;
+      case "stopAgentLab":
+        await this.agentLab.stop(message.runId);
+        break;
+      case "retryAgentLab":
+        if (message.runId) await this.agentLab.retry(message.runId);
         break;
       case "activateTab":
         await this.activateTab(message.id);
@@ -864,6 +888,7 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     <div class="actions">
       <button id="sessions" title="Session library">◷</button>
       <button id="resources" title="PiDE control center">⚙</button>
+      <button id="agent-lab" title="Agent Lab">⚗</button>
       <button id="compact" title="Compact session context">⇣</button>
       <button id="reload-session" title="Reload session context">↻</button>
       <button id="changes" class="hidden" title="Review changes">Δ</button>
@@ -899,6 +924,14 @@ export class PiViewProvider implements vscode.WebviewViewProvider, vscode.Dispos
     <header><strong>PiDE Changes</strong><button data-close-panel="changes-panel">×</button></header>
     <div id="changes-totals" class="panel-summary"></div>
     <div id="changes-list" class="panel-list"></div>
+  </section>
+  <section id="agent-lab-panel" class="control-panel hidden" aria-label="Agent Lab">
+    <header><strong>Agent Lab</strong><button data-close-panel="agent-lab-panel">×</button></header>
+    <div id="agent-lab-summary" class="panel-summary">Read-only subagents are ready.</div>
+    <textarea id="agent-lab-task" rows="4" placeholder="Ask selected read-only subagents to investigate…"></textarea>
+    <div id="agent-lab-roles" class="panel-list compact"></div>
+    <div class="panel-toolbar"><button id="agent-lab-run">Run selected</button><button id="agent-lab-stop">Stop all</button><button id="agent-lab-refresh">Refresh</button></div>
+    <div id="agent-lab-runs" class="panel-list"></div>
   </section>
   <section id="mcp-panel" class="control-panel hidden" aria-label="MCP control center">
     <header><strong>MCP Control Center</strong><button data-close-panel="mcp-panel">×</button></header>
